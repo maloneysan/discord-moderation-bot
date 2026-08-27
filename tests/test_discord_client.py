@@ -276,10 +276,112 @@ class DiscordClientTests(unittest.IsolatedAsyncioTestCase):
                 "vc_status",
                 "bot_status",
                 "permissions",
+                "alert_channel",
+                "alert_channel_reset",
+                "alert_channel_status",
                 "ping",
                 "moderation_help",
             },
         )
+
+    async def test_alert_channel_command_persists_sendable_same_guild_channel(self) -> None:
+        client = self.make_client()
+        member = SimpleNamespace()
+        guild = SimpleNamespace(id=100, me=member)
+        channel = SimpleNamespace(
+            id=300,
+            mention="<#300>",
+            guild=guild,
+            permissions_for=Mock(
+                return_value=SimpleNamespace(view_channel=True, send_messages=True)
+            ),
+        )
+        interaction = SimpleNamespace(
+            guild=guild,
+            permissions=SimpleNamespace(manage_guild=True),
+            response=SimpleNamespace(send_message=AsyncMock()),
+        )
+
+        await client._command_alert_channel(interaction, channel)
+
+        self.assertEqual(client._alert_channels.get(100), 300)
+        response = interaction.response.send_message.await_args
+        self.assertIn("<#300>", response.args[0])
+        self.assertTrue(response.kwargs["ephemeral"])
+
+    async def test_alert_channel_command_rejects_cross_guild_or_unsendable_channel(self) -> None:
+        client = self.make_client()
+        guild = SimpleNamespace(id=100, me=SimpleNamespace())
+        interaction = SimpleNamespace(
+            guild=guild,
+            permissions=SimpleNamespace(manage_guild=True),
+            response=SimpleNamespace(send_message=AsyncMock()),
+        )
+        cross_guild = SimpleNamespace(
+            id=300,
+            guild=SimpleNamespace(id=999),
+        )
+
+        await client._command_alert_channel(interaction, cross_guild)
+        self.assertIsNone(client._alert_channels.get(100))
+
+        interaction.response.send_message.reset_mock()
+        blocked = SimpleNamespace(
+            id=301,
+            guild=guild,
+            permissions_for=Mock(
+                return_value=SimpleNamespace(view_channel=True, send_messages=False)
+            ),
+        )
+        await client._command_alert_channel(interaction, blocked)
+        self.assertIsNone(client._alert_channels.get(100))
+
+    async def test_runtime_alert_channel_overrides_text_and_voice_destinations(self) -> None:
+        client = self.make_client({100: 301})
+        client._alert_channels.set(100, 300)
+        alert_channel = SimpleNamespace(
+            guild=SimpleNamespace(id=100),
+            send=AsyncMock(),
+        )
+        client._resolve_channel = AsyncMock(return_value=alert_channel)
+        client.get_guild = Mock(
+            return_value=SimpleNamespace(
+                get_member=Mock(return_value=SimpleNamespace(display_name="VC話者"))
+            )
+        )
+
+        await client._send_alert(self.make_message(), [detection()])
+        await client._send_voice_alert(100, 200, [detection()])
+
+        self.assertEqual(
+            [call.args[0] for call in client._resolve_channel.await_args_list],
+            [300, 300],
+        )
+        self.assertEqual(alert_channel.send.await_count, 2)
+
+    async def test_alert_channel_reset_and_status_require_manager(self) -> None:
+        client = self.make_client()
+        client._alert_channels.set(100, 300)
+        interaction = SimpleNamespace(
+            guild=SimpleNamespace(id=100),
+            permissions=SimpleNamespace(manage_guild=True),
+            response=SimpleNamespace(send_message=AsyncMock()),
+        )
+
+        await client._command_alert_channel_status(interaction)
+        self.assertIn("<#300>", interaction.response.send_message.await_args.args[0])
+
+        interaction.response.send_message.reset_mock()
+        await client._command_alert_channel_reset(interaction)
+        self.assertIsNone(client._alert_channels.get(100))
+
+        denied = SimpleNamespace(
+            guild=SimpleNamespace(id=100),
+            permissions=SimpleNamespace(manage_guild=False),
+            response=SimpleNamespace(send_message=AsyncMock()),
+        )
+        await client._command_alert_channel_status(denied)
+        self.assertIn("サーバーを管理", denied.response.send_message.await_args.args[0])
 
     async def test_vc_join_command_joins_the_callers_channel(self) -> None:
         client = self.make_client()

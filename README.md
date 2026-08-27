@@ -155,14 +155,17 @@ Discordの入力欄で`/`を入力すると表示されます。
 | `/vc_status` | VC、受信機能、認識件数、低品質除外、最終認識、直近エラーを表示 | 全員 |
 | `/bot_status` | 稼働時間、判定・通知件数、会話文脈、API・再接続・VC状態を表示 | 全員 |
 | `/permissions` | 現在のチャンネルでのBot実効権限を表示 | 全員 |
+| `/alert_channel channel:#通知先` | テキスト・VCの検知通知先を設定して再起動後も維持 | サーバーを管理 |
+| `/alert_channel_reset` | コマンド指定を解除し、環境設定または自動選択へ戻す | サーバーを管理 |
+| `/alert_channel_status` | 現在適用されている通知先を表示 | サーバーを管理 |
 | `/ping` | Botの応答速度を表示 | 全員 |
 | `/moderation_help` | コマンド一覧を表示 | 全員 |
 
-コマンドの応答は実行者だけに見える形式です。`/vc_leave`や`/vc_auto false`による一時停止はBot再起動で解除され、自動参加へ戻ります。
+コマンドの応答は実行者だけに見える形式です。`/alert_channel`は同じサーバー内でBotが閲覧・送信できる通常テキストチャンネルだけを受け付け、テキストとVCの通知先を同時に変更します。設定ファイルにはサーバーIDとチャンネルIDだけを保存し、投稿内容や文字起こしは保存しません。`/vc_leave`や`/vc_auto false`による一時停止はBot再起動で解除され、自動参加へ戻ります。
 
 Developer PortalのBot説明にも、次の短縮一覧を掲載します。
 
-`/vc_join /vc_leave /vc_auto /vc_status /bot_status /permissions /ping /moderation_help`
+`/vc_join /vc_leave /vc_auto /vc_status /bot_status /permissions /alert_channel /alert_channel_reset /alert_channel_status /ping /moderation_help`
 
 ## 判定ルール
 

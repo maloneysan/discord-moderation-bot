@@ -33,6 +33,7 @@ class BotConfig:
     context_ttl_seconds: int = 180
     voice_min_rms: int = 80
     voice_min_utterance_ms: int = 180
+    runtime_state_path: Optional[Path] = None
 
     @classmethod
     def from_env(cls, env: Optional[Mapping[str, str]] = None) -> "BotConfig":
@@ -170,6 +171,7 @@ class BotConfig:
             context_ttl_seconds=context_ttl_seconds,
             voice_min_rms=voice_min_rms,
             voice_min_utterance_ms=voice_min_utterance_ms,
+            runtime_state_path=rules_path.parent / "runtime_alert_channels.json",
         )
 
     def alert_channel_for(self, guild_id: int) -> Optional[int]:

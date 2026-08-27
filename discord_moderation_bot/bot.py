@@ -9,6 +9,7 @@ from discord import app_commands
 
 from .config import BotConfig
 from .context import ConversationContextBuffer
+from .destinations import AlertChannelStore
 from .policy import (
     MessageContext,
     build_alert_text,
@@ -44,6 +45,7 @@ class ModerationClient(discord.Client):
         self._contextual_analyses = 0
         self._text_alerts_sent = 0
         self._last_resumed_at: Optional[float] = None
+        self._alert_channels = AlertChannelStore(config.runtime_state_path)
         self._voice = VoiceModerationManager(
             self,
             config,
@@ -91,6 +93,14 @@ class ModerationClient(discord.Client):
 
     async def on_guild_remove(self, guild: discord.Guild) -> None:
         self._synced_command_guilds.discard(guild.id)
+        try:
+            self._alert_channels.clear(guild.id)
+        except OSError as exc:
+            LOGGER.warning(
+                "Could not clear departed guild alert destination (guild_id=%s, error=%s)",
+                guild.id,
+                type(exc).__name__,
+            )
 
     async def on_disconnect(self) -> None:
         LOGGER.warning("Disconnected from Discord; the client will attempt to reconnect")
@@ -223,7 +233,9 @@ class ModerationClient(discord.Client):
         self, message: discord.Message, detections: list[CategoryDetection]
     ) -> None:
         guild_id = message.guild.id
-        alert_channel_id = self._config.alert_channel_for(guild_id)
+        alert_channel_id = self._alert_channels.get(guild_id)
+        if alert_channel_id is None:
+            alert_channel_id = self._config.alert_channel_for(guild_id)
         allowed_mentions = discord.AllowedMentions.none()
         author_name = getattr(message.author, "display_name", None) or getattr(
             message.author, "name", "不明なユーザー"
@@ -253,7 +265,9 @@ class ModerationClient(discord.Client):
         user_id: int,
         detections: list[CategoryDetection],
     ) -> None:
-        alert_channel_id = self._config.voice_alert_channel_for(guild_id)
+        alert_channel_id = self._alert_channels.get(guild_id)
+        if alert_channel_id is None:
+            alert_channel_id = self._config.voice_alert_channel_for(guild_id)
         if alert_channel_id is not None:
             alert_channel = await self._resolve_channel(alert_channel_id)
         else:
@@ -291,7 +305,9 @@ class ModerationClient(discord.Client):
             channel = await self._resolve_channel(channel_id)
             if channel is not None:
                 candidates.append(channel)
-        configured_id = self._config.voice_alert_channel_for(guild_id)
+        configured_id = self._alert_channels.get(guild_id)
+        if configured_id is None:
+            configured_id = self._config.voice_alert_channel_for(guild_id)
         if configured_id is not None and configured_id != channel_id:
             configured = await self._resolve_channel(configured_id)
             if configured is not None:
@@ -380,7 +396,7 @@ class ModerationClient(discord.Client):
 
         @app_commands.command(
             name="moderation_help",
-            description="冷笑・差別検知Botの操作コマンド一覧を表示します",
+            description="モデレーションBotの操作コマンド一覧を表示します",
         )
         async def moderation_help(interaction: discord.Interaction) -> None:
             await interaction.response.send_message(
@@ -391,10 +407,44 @@ class ModerationClient(discord.Client):
                 "`/vc_status` VC監視状態\n"
                 "`/bot_status` Bot全体の状態\n"
                 "`/permissions` この場所でのBot実効権限\n"
+                "`/alert_channel` テキスト・VC通知先を設定\n"
+                "`/alert_channel_reset` 通知先設定を初期値へ戻す\n"
+                "`/alert_channel_status` 現在の通知先を確認\n"
                 "`/ping` 応答速度\n\n"
-                "VCの変更コマンドには「サーバーを管理」権限が必要です。",
+                "VCと通知先の変更コマンドには「サーバーを管理」権限が必要です。",
                 ephemeral=True,
             )
+
+        @app_commands.command(
+            name="alert_channel",
+            description="このサーバーのテキスト・VC検知通知先を設定します",
+        )
+        @app_commands.describe(channel="検知通知を送るテキストチャンネル")
+        @app_commands.guild_only()
+        @app_commands.default_permissions(manage_guild=True)
+        async def alert_channel(
+            interaction: discord.Interaction,
+            channel: discord.TextChannel,
+        ) -> None:
+            await self._command_alert_channel(interaction, channel)
+
+        @app_commands.command(
+            name="alert_channel_reset",
+            description="通知先を環境設定または自動選択へ戻します",
+        )
+        @app_commands.guild_only()
+        @app_commands.default_permissions(manage_guild=True)
+        async def alert_channel_reset(interaction: discord.Interaction) -> None:
+            await self._command_alert_channel_reset(interaction)
+
+        @app_commands.command(
+            name="alert_channel_status",
+            description="このサーバーの現在の検知通知先を表示します",
+        )
+        @app_commands.guild_only()
+        @app_commands.default_permissions(manage_guild=True)
+        async def alert_channel_status(interaction: discord.Interaction) -> None:
+            await self._command_alert_channel_status(interaction)
 
         for command in (
             vc_join,
@@ -403,6 +453,9 @@ class ModerationClient(discord.Client):
             vc_status,
             bot_status,
             permissions,
+            alert_channel,
+            alert_channel_reset,
+            alert_channel_status,
             ping,
             moderation_help,
         ):
@@ -439,6 +492,119 @@ class ModerationClient(discord.Client):
             ephemeral=True,
         )
         return False
+
+    async def _command_alert_channel(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel,
+    ) -> None:
+        if not await self._require_guild_manager(interaction):
+            return
+        guild = interaction.guild
+        channel_guild = getattr(channel, "guild", None)
+        if channel_guild is None or channel_guild.id != guild.id:
+            await interaction.response.send_message(
+                "同じサーバーのテキストチャンネルを選んでください。",
+                ephemeral=True,
+            )
+            return
+        member = guild.me
+        permissions = channel.permissions_for(member) if member is not None else None
+        if not permissions or not (
+            permissions.view_channel and permissions.send_messages
+        ):
+            await interaction.response.send_message(
+                "そのチャンネルではBotに「チャンネルを見る」と"
+                "「メッセージを送信」権限が必要です。",
+                ephemeral=True,
+            )
+            return
+        try:
+            self._alert_channels.set(guild.id, channel.id)
+        except OSError as exc:
+            LOGGER.warning(
+                "Could not persist alert destination (guild_id=%s, error=%s)",
+                guild.id,
+                type(exc).__name__,
+            )
+            await interaction.response.send_message(
+                "通知先を保存できませんでした。少し待ってから再実行してください。",
+                ephemeral=True,
+            )
+            return
+        LOGGER.info(
+            "Alert destination updated (guild_id=%s, channel_id=%s)",
+            guild.id,
+            channel.id,
+        )
+        await interaction.response.send_message(
+            f"✅ テキスト・VCの検知通知先を {channel.mention} に設定しました。",
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    async def _command_alert_channel_reset(
+        self, interaction: discord.Interaction
+    ) -> None:
+        if not await self._require_guild_manager(interaction):
+            return
+        try:
+            changed = self._alert_channels.clear(interaction.guild.id)
+        except OSError as exc:
+            LOGGER.warning(
+                "Could not reset alert destination (guild_id=%s, error=%s)",
+                interaction.guild.id,
+                type(exc).__name__,
+            )
+            await interaction.response.send_message(
+                "通知先設定を解除できませんでした。少し待ってから再実行してください。",
+                ephemeral=True,
+            )
+            return
+        LOGGER.info(
+            "Alert destination reset (guild_id=%s, changed=%s)",
+            interaction.guild.id,
+            changed,
+        )
+        await interaction.response.send_message(
+            "✅ コマンドで指定した通知先を解除しました。"
+            "環境設定または自動選択へ戻ります。",
+            ephemeral=True,
+        )
+
+    async def _command_alert_channel_status(
+        self, interaction: discord.Interaction
+    ) -> None:
+        if not await self._require_guild_manager(interaction):
+            return
+        guild_id = interaction.guild.id
+        override = self._alert_channels.get(guild_id)
+        if override is not None:
+            status = f"コマンド設定：<#{override}>"
+        else:
+            text_channel = self._config.alert_channel_for(guild_id)
+            voice_channel = self._config.voice_alert_channel_for(guild_id)
+            if text_channel is None and voice_channel is None:
+                status = "未指定（テキストは元投稿へ返信、VCは送信可能先を自動選択）"
+            elif text_channel == voice_channel:
+                status = f"環境設定：<#{text_channel}>"
+            else:
+                text_status = (
+                    f"<#{text_channel}>"
+                    if text_channel is not None
+                    else "元投稿へ返信"
+                )
+                voice_status = (
+                    f"<#{voice_channel}>"
+                    if voice_channel is not None
+                    else "自動選択"
+                )
+                status = f"環境設定：テキスト={text_status}、VC={voice_status}"
+        await interaction.response.send_message(
+            f"**現在の検知通知先**\n{status}",
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
     async def _command_vc_join(self, interaction: discord.Interaction) -> None:
         if not await self._require_guild_manager(interaction):

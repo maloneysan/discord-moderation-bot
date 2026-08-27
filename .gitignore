@@ -6,6 +6,8 @@ __pycache__/
 models/
 logs/
 config/autostart.env
+config/runtime_alert_channels.json
+config/runtime_alert_channels.json.tmp
 .DS_Store
 .pytest_cache/
 htmlcov/
