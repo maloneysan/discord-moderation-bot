@@ -242,9 +242,11 @@ class VoiceModerationManager:
         self._rejected_chunks: Dict[int, int] = defaultdict(int)
 
     async def start(self) -> None:
-        if not self._config.voice_enabled or self._started:
+        if not self._config.voice_enabled:
             return
-        self._started = True
+        if self._started:
+            await self._sync_all_auto_guilds()
+            return
         try:
             self._load_runtime()
         except Exception as exc:
@@ -253,6 +255,7 @@ class VoiceModerationManager:
                 if self._config.is_guild_monitored(guild.id):
                     await self._record_error(guild.id, "音声受信機能を初期化できません")
             return
+        self._started = True
 
         for guild_id, channel_id in self._config.voice_channel_ids.items():
             try:
@@ -266,19 +269,23 @@ class VoiceModerationManager:
                 )
                 await self._record_error(guild_id, "指定VCへ接続できません")
 
-        if self._config.voice_auto_join:
-            for guild in tuple(self._client.guilds):
-                if not self._config.is_guild_monitored(guild.id):
-                    continue
-                try:
-                    await self._sync_auto_guild(guild)
-                except Exception as exc:
-                    LOGGER.warning(
-                        "Could not auto-join VC (guild_id=%s, error=%s)",
-                        guild.id,
-                        type(exc).__name__,
-                    )
-                    await self._record_error(guild.id, "VCへ自動参加できません")
+        await self._sync_all_auto_guilds()
+
+    async def _sync_all_auto_guilds(self) -> None:
+        if not self._config.voice_auto_join:
+            return
+        for guild in tuple(self._client.guilds):
+            if not self._config.is_guild_monitored(guild.id):
+                continue
+            try:
+                await self.sync_guild(guild)
+            except Exception as exc:
+                LOGGER.warning(
+                    "Could not auto-join VC (guild_id=%s, error=%s)",
+                    guild.id,
+                    type(exc).__name__,
+                )
+                await self._record_error(guild.id, "VCへ自動参加できません")
 
     def _load_runtime(self) -> None:
         _ensure_opus_loaded()
@@ -303,8 +310,12 @@ class VoiceModerationManager:
 
         existing = channel.guild.voice_client
         previous_channel_id = getattr(getattr(existing, "channel", None), "id", None)
-        if existing is not None and not hasattr(existing, "listen"):
+        if existing is not None and (
+            not hasattr(existing, "listen")
+            or not self._voice_client_is_connected(existing)
+        ):
             await existing.disconnect(force=True)
+            self._sessions.pop(guild_id, None)
             existing = None
         if existing is not None:
             if existing.channel.id != channel.id:
@@ -394,6 +405,11 @@ class VoiceModerationManager:
                     await self._sync_auto_guild(guild)
         else:
             self._auto_join_suppressed.add(guild_id)
+            guild = self._client.get_guild(guild_id)
+            existing = guild.voice_client if guild is not None else None
+            lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+            async with lock:
+                await self._disconnect_guild(guild_id, existing)
 
     def is_auto_join_enabled(self, guild_id: int) -> bool:
         return (
@@ -404,7 +420,21 @@ class VoiceModerationManager:
     def current_channel(self, guild_id: int) -> Optional[object]:
         guild = self._client.get_guild(guild_id)
         voice_client = guild.voice_client if guild is not None else None
+        if not self._voice_client_is_connected(voice_client):
+            return None
         return getattr(voice_client, "channel", None)
+
+    @staticmethod
+    def _voice_client_is_connected(voice_client: Optional[object]) -> bool:
+        if voice_client is None:
+            return False
+        is_connected = getattr(voice_client, "is_connected", None)
+        if not callable(is_connected):
+            return True
+        try:
+            return bool(is_connected())
+        except Exception:
+            return False
 
     @property
     def runtime_available(self) -> bool:
@@ -448,6 +478,9 @@ class VoiceModerationManager:
         preferred: Optional[discord.abc.Connectable] = None,
     ) -> None:
         existing = guild.voice_client
+        if existing is not None and not self._voice_client_is_connected(existing):
+            await self._disconnect_guild(guild.id, existing)
+            existing = None
         current_channel = getattr(existing, "channel", None)
         if current_channel is not None and self._human_count(current_channel) > 0:
             self._sessions[guild.id] = existing

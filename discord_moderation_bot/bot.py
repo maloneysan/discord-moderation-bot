@@ -676,8 +676,20 @@ class ModerationClient(discord.Client):
             )
             return
         state = "有効" if enabled else "一時停止"
+        channel = self._voice.current_channel(interaction.guild.id)
+        if enabled and channel is None:
+            detail = " 現在利用者がいるVCがないため、参加者が入るまで待機します。"
+        elif enabled:
+            detail = f" VC「{channel.name}」を監視中です。"
+        else:
+            detail = " 現在のVCからも退出しました。"
+        LOGGER.info(
+            "VC automatic monitoring changed (guild_id=%s, enabled=%s)",
+            interaction.guild.id,
+            enabled,
+        )
         await interaction.response.send_message(
-            f"✅ このサーバーのVC自動参加を{state}にしました。",
+            f"✅ このサーバーのVC自動参加を{state}にしました。{detail}",
             ephemeral=True,
         )
 

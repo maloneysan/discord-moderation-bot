@@ -266,6 +266,60 @@ class AutomaticVoiceMonitoringTests(unittest.IsolatedAsyncioTestCase):
 
         manager._sync_auto_guild.assert_awaited_once_with(guild, active)
 
+    async def test_disabling_auto_join_disconnects_current_vc(self) -> None:
+        voice_client = SimpleNamespace(
+            channel=self.channel(400, 1),
+            stop_listening=Mock(),
+            disconnect=AsyncMock(),
+            is_connected=Mock(return_value=True),
+        )
+        guild = SimpleNamespace(id=100, voice_client=voice_client)
+        client = SimpleNamespace(
+            user=SimpleNamespace(id=999),
+            get_guild=Mock(return_value=guild),
+        )
+        manager = self.make_manager(client)
+
+        await manager.set_auto_join_for_guild(100, False)
+
+        self.assertFalse(manager.is_auto_join_enabled(100))
+        voice_client.stop_listening.assert_called_once()
+        voice_client.disconnect.assert_awaited_once_with(force=True)
+
+    async def test_stale_voice_client_is_reconnected(self) -> None:
+        stale = SimpleNamespace(
+            channel=self.channel(400, 1),
+            stop_listening=Mock(),
+            disconnect=AsyncMock(),
+            is_connected=Mock(return_value=False),
+        )
+        target = self.channel(401, 2)
+        guild = SimpleNamespace(
+            id=100,
+            voice_client=stale,
+            voice_channels=[target],
+            stage_channels=[],
+        )
+        client = SimpleNamespace(user=SimpleNamespace(id=999))
+        manager = self.make_manager(client)
+        manager._connect_guild = AsyncMock()
+
+        await manager._sync_auto_guild(guild)
+
+        stale.disconnect.assert_awaited_once_with(force=True)
+        manager._connect_guild.assert_awaited_once_with(100, 401)
+
+    async def test_start_resynchronizes_after_gateway_reconnect(self) -> None:
+        guild = SimpleNamespace(id=100)
+        client = SimpleNamespace(user=SimpleNamespace(id=999), guilds=[guild])
+        manager = self.make_manager(client)
+        manager._started = True
+        manager.sync_guild = AsyncMock()
+
+        await manager.start()
+
+        manager.sync_guild.assert_awaited_once_with(guild)
+
     async def test_monitoring_notice_is_sent_once_per_vc_session(self) -> None:
         client = SimpleNamespace(user=SimpleNamespace(id=999))
         notice_sender = AsyncMock()

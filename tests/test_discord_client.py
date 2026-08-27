@@ -414,6 +414,22 @@ class DiscordClientTests(unittest.IsolatedAsyncioTestCase):
         client._voice.join_channel.assert_not_awaited()
         interaction.response.send_message.assert_awaited_once()
 
+    async def test_vc_auto_command_reports_disconnection_when_disabled(self) -> None:
+        client = self.make_client()
+        client._voice.set_auto_join_for_guild = AsyncMock()
+        client._voice.current_channel = Mock(return_value=None)
+        interaction = SimpleNamespace(
+            guild=SimpleNamespace(id=100),
+            permissions=SimpleNamespace(manage_guild=True),
+            response=SimpleNamespace(send_message=AsyncMock()),
+        )
+
+        await client._command_vc_auto(interaction, False)
+
+        client._voice.set_auto_join_for_guild.assert_awaited_once_with(100, False)
+        message = interaction.response.send_message.await_args.args[0]
+        self.assertIn("現在のVCからも退出", message)
+
     async def test_permissions_command_reports_voice_channel_overwrites(self) -> None:
         client = self.make_client()
         member = SimpleNamespace()
