@@ -1,0 +1,209 @@
+{
+  "version": 5,
+  "threshold": 80,
+  "categories": {
+    "discrimination": {
+      "label": "差別表現"
+    },
+    "cynicism": {
+      "label": "冷笑"
+    },
+    "sexual_content": {
+      "label": "性的表現"
+    },
+    "sensitive_term": {
+      "label": "要注意語（ADHD）"
+    },
+    "drug_content": {
+      "label": "薬物関連"
+    }
+  },
+  "exceptions": [
+    "(?:「[^」]{1,240}」|\\\"[^\\\"]{1,240}\\\").{0,60}(?:差別|偏見|蔑称|よくない|良くない|だめ|駄目|許されない|やめよう|問題)",
+    "(?:と言う|という|っていう|との発言|という発言|という表現|という言葉).{0,60}(?:差別|偏見|蔑称|よくない|良くない|だめ|駄目|許されない|やめよう|問題)",
+    "(?:差別|偏見|ヘイト).{0,40}(?:をなくそう|に反対|ではない|じゃない|をやめよう|はよくない|は良くない|は許されない|を批判)",
+    "(?:差別的な|偏見に基づく).{0,60}(?:考え|発言|投稿|言い方).{0,30}(?:を批判|に反対|をやめよう|は問題)"
+  ],
+  "rules": [
+    {
+      "id": "discrimination.explicit_slur",
+      "category": "discrimination",
+      "score": 100,
+      "pattern": "(?:土人|チョン|支那人?|クロンボ|ニガー|ジャップ|エベンキ|カタワ|メクラ|ツンボ|池沼|ガイジ|キチガイ|ホモ野郎|オカマ野郎)"
+    },
+    {
+      "id": "discrimination.protected_target",
+      "category": "discrimination",
+      "score": 35,
+      "pattern": "(?:日本人|外国人|中国人|韓国人|朝鮮人|在日|アジア人|アフリカ人|黒人|白人|有色人種|移民|難民|アイヌ|琉球人|沖縄人|イスラム教徒|ムスリム|キリスト教徒|クリスチャン|ユダヤ人|仏教徒|ヒンドゥー教徒|女性|男性|女(?:性)?|男(?:性)?|同性愛者|性的少数者|lgbtq?|ゲイ|レズビアン|バイセクシュアル|トランスジェンダー|ノンバイナリー|障害者|身体障害|知的障害|発達障害|精神障害|自閉症|adhd|車椅子利用者|うつ病|統合失調症|hiv感染者|高齢者|老人|若者|子ども|子供)"
+    },
+    {
+      "id": "discrimination.vulnerable_group",
+      "category": "discrimination",
+      "score": 35,
+      "pattern": "(?:生活保護受給者|ホームレス|低所得者|貧困層|低学歴|田舎者|地方出身者|外国籍|無国籍者|病人|感染者)"
+    },
+    {
+      "id": "discrimination.group_generalization",
+      "category": "discrimination",
+      "score": 25,
+      "pattern": "(?:は|なんて|って).{0,12}(?:みんな|全員|どいつも|例外なく|決まって|所詮|たいてい|総じて|ろくな.{0,4}(?:奴|やつ|人).{0,4}(?:が)?いない)"
+    },
+    {
+      "id": "discrimination.essentialism",
+      "category": "discrimination",
+      "score": 30,
+      "pattern": "(?:生まれつき|遺伝的に|本質的に|民族的に|性別上|血筋で|そもそも).{0,22}(?:劣|低|弱|愚|危険|異常|欠陥|向いていない|できない)"
+    },
+    {
+      "id": "discrimination.exclusion_or_inferiority",
+      "category": "discrimination",
+      "score": 50,
+      "pattern": "(?:劣って(?:いる|る)|知能(?:が)?低い|頭(?:が)?悪い|能力(?:が)?低い|役に立たない|社会の負担|出て[い行]け|帰れ|追い出せ|締め出せ|いらない|生きる価値(?:が)?ない|人間じゃない|人間ではない|気持ち悪い|全員消えろ|まともじゃない|普通ではない)"
+    },
+    {
+      "id": "discrimination.harmful_stereotype",
+      "category": "discrimination",
+      "score": 45,
+      "pattern": "(?:犯罪者(?:ばかり|だらけ)|嘘つき(?:ばかり|だらけ)|怠け者(?:ばかり|だらけ)|不潔|野蛮|暴力的|危険な連中|信用できない|金目当て|寄生している|税金泥棒)"
+    },
+    {
+      "id": "discrimination.dehumanization",
+      "category": "discrimination",
+      "score": 55,
+      "pattern": "(?:害虫|寄生虫|病原菌|ばい菌|汚物|猿以下|獣以下|ゴミ以下|人間扱いする必要(?:が)?ない|人間のふりをした)"
+    },
+    {
+      "id": "discrimination.rights_denial",
+      "category": "discrimination",
+      "score": 60,
+      "pattern": "(?:権利を与えるな|投票させるな|学校に入れるな|店に入れるな|採用するな|雇うな|結婚させるな|子どもを産ませるな|子供を産ませるな|隔離しろ|収容しろ|強制送還しろ|入国禁止にしろ|近づけるな|同じ場所に置くな)"
+    },
+    {
+      "id": "discrimination.complex_target_then_harm",
+      "category": "discrimination",
+      "score": 90,
+      "pattern": "(?:日本人|外国人|中国人|韓国人|朝鮮人|在日|黒人|白人|移民|難民|イスラム教徒|ムスリム|女性|男性|女|男|同性愛者|ゲイ|レズビアン|トランスジェンダー|障害者|発達障害|精神障害|高齢者|老人|生活保護受給者|ホームレス).{0,45}(?:劣って|知能が低|頭が悪|能力が低|犯罪者|危険|不潔|野蛮|出て[い行]け|帰れ|追い出せ|隔離|権利を与えるな|採用するな|雇うな|人間ではない|寄生虫|害虫)"
+    },
+    {
+      "id": "discrimination.complex_harm_then_target",
+      "category": "discrimination",
+      "score": 90,
+      "pattern": "(?:出て[い行]け|帰れ|追い出せ|隔離しろ|権利を与えるな|採用するな|雇うな|人間ではない|寄生虫|害虫).{0,35}(?:日本人|外国人|中国人|韓国人|朝鮮人|在日|黒人|白人|移民|難民|イスラム教徒|ムスリム|女性|男性|女|男|同性愛者|ゲイ|レズビアン|トランスジェンダー|障害者|発達障害|精神障害|高齢者|老人|生活保護受給者|ホームレス)"
+    },
+    {
+      "id": "discrimination.ableist_denial",
+      "category": "discrimination",
+      "score": 90,
+      "pattern": "(?:(?:障害|発達障害|精神障害|自閉症|adhd|うつ(?:病)?).{0,18}(?:は|なんて).{0,8}(?:甘え|怠け|わがまま|親のしつけ不足|存在しない)|(?:甘え|怠け).{0,8}(?:にすぎない|だ).{0,12}(?:障害|うつ))"
+    },
+    {
+      "id": "discrimination.identity_pathologizing",
+      "category": "discrimination",
+      "score": 90,
+      "pattern": "(?:同性愛|ゲイ|レズビアン|トランスジェンダー|lgbtq?).{0,20}(?:病気|異常|治すべき|治療すべき|自然に反する|存在してはいけない)"
+    },
+    {
+      "id": "discrimination.gender_role_denial",
+      "category": "discrimination",
+      "score": 85,
+      "pattern": "(?:(?:女|女性).{0,18}(?:運転するな|仕事に向かない|黙って家事|家にいろ|感情的で使えない)|(?:男|男性).{0,18}(?:泣くな|弱音を吐くな|稼げないなら価値がない))"
+    },
+    {
+      "id": "discrimination.gendered_emasculation",
+      "category": "discrimination",
+      "score": 90,
+      "pattern": "(?:女々し(?:い|く|さ|かった|くて)|男らしくない|男(?:のくせに|なのに).{0,12}(?:泣く|弱音|情けない))"
+    },
+    {
+      "id": "cynicism.target",
+      "category": "cynicism",
+      "score": 30,
+      "pattern": "(?:お前|あんた|きみ|君|こいつ|あいつ|そいつ|おたく|<@!?[0-9]+>)"
+    },
+    {
+      "id": "cynicism.gendered_mockery",
+      "category": "cynicism",
+      "score": 85,
+      "pattern": "(?:女々し(?:い|く|さ|かった|くて)|男らしくない|男(?:のくせに|なのに).{0,12}(?:泣く|弱音|情けない))"
+    },
+    {
+      "id": "cynicism.ridicule",
+      "category": "cynicism",
+      "score": 55,
+      "pattern": "(?:必死.{0,12}(?:草|笑|w{2,})|頭(?:が)?悪(?:い|すぎ)|弱すぎ|雑魚|無能|だっさ|恥ずかし(?:い|すぎ)|キモ(?:い|すぎ)?|痛すぎ|哀れ|程度が低い|かわいそう.{0,6}(?:笑|w))"
+    },
+    {
+      "id": "cynicism.implicit_target",
+      "category": "cynicism",
+      "score": 85,
+      "pattern": "(?:そんなこともできない(?:の|んだ|んですか)|これも分からない(?:の|んだ|んですか)|悔しいねえ|顔真っ赤(?:で)?(?:草|笑|w{2,})|効いてて(?:草|笑|w{2,})|誰も聞いてない|お気持ち表明おつ|必死すぎて(?:草|笑|w{2,}))"
+    },
+    {
+      "id": "cynicism.uo_reaction",
+      "category": "cynicism",
+      "score": 85,
+      "pattern": "(?:^|[^ぁ-んァ-ヶ一-龠a-z0-9])うお(?:w+)?(?:$|[^ぁ-んァ-ヶ一-龠a-z0-9])"
+    },
+    {
+      "id": "cynicism.dowa_reaction",
+      "category": "cynicism",
+      "score": 85,
+      "pattern": "(?:どわ|ドワ)(?:ぁ|あ|ー|〜|~)+(?!フ)(?:(?:笑|草|w+))?"
+    },
+    {
+      "id": "cynicism.meu_ending",
+      "category": "cynicism",
+      "score": 85,
+      "pattern": "めう(?:[!！?？。…〜~wｗ笑草]*)$"
+    },
+    {
+      "id": "cynicism.kuiya_reaction",
+      "category": "cynicism",
+      "score": 85,
+      "pattern": "(?:クイヤ|くいや)"
+    },
+    {
+      "id": "cynicism.mocking_reaction",
+      "category": "cynicism",
+      "score": 85,
+      "pattern": "(?:(?:うわ|ウワ)ぁ+(?:…|\\.{2,})|きっつ+(?:…|\\.{2,})|いたた+(?:…|\\.{2,}))(?:(?:笑|草|w+))?"
+    },
+    {
+      "id": "cynicism.patronizing",
+      "category": "cynicism",
+      "score": 60,
+      "pattern": "(?:よくできましたね|えらいえらい|頑張ったねえ|さすがですね).{0,8}(?:笑|草|w+)"
+    },
+    {
+      "id": "cynicism.dismissive",
+      "category": "cynicism",
+      "score": 35,
+      "pattern": "(?:はいはい|どうせ無理|おつかれさま(?:笑|w)|残念でした|知らんけど|勝手にどうぞ|もういいよ)"
+    },
+    {
+      "id": "cynicism.laughter",
+      "category": "cynicism",
+      "score": 25,
+      "pattern": "(?:草|笑|w{2,})"
+    },
+    {
+      "id": "sexual_content.explicit_or_vulgar",
+      "category": "sexual_content",
+      "score": 100,
+      "pattern": "(?:下ネタ|ちんこ|ちんぽ|ちんちん(?!電車)|まんこ|おっぱい|乳首|セックス|性交|性行為|えっち(?!ング)|エッチ(?!ング)|オナニー|自慰|射精|精液|勃起|フェラ|クンニ|パイズリ|アナル|ヤリマン|ヤリチン|童貞|処女(?!航海)|性欲|淫乱)"
+    },
+    {
+      "id": "sensitive_term.adhd",
+      "category": "sensitive_term",
+      "score": 100,
+      "pattern": "(?:^|[^a-z0-9])adhd(?:$|[^a-z0-9])"
+    },
+    {
+      "id": "drug_content.illicit_or_abuse",
+      "category": "drug_content",
+      "score": 100,
+      "pattern": "(?:違法薬物|麻薬|大麻|マリファナ|カンナビス|覚醒剤|シャブ|コカイン|ヘロイン|メタンフェタミン|アンフェタミン|フェンタニル|ケタミン|危険ドラッグ|脱法ドラッグ|大麻グミ|オーバードーズ|(?:^|[^a-z0-9])(?:mdma|lsd|thc|cbd|od(?!缶))(?:$|[^a-z0-9]))"
+    }
+  ]
+}
