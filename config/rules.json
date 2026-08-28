@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "threshold": 80,
   "categories": {
     "discrimination": {
@@ -188,6 +188,12 @@
       "pattern": "(?:草|笑|w{2,})"
     },
     {
+      "id": "cynicism.ai_review_cue",
+      "category": "cynicism",
+      "score": 10,
+      "pattern": "(?:馬鹿|バカ|アホ|クズ|カス|ゴミ|ざまあ|必死すぎ|その程度|頭大丈夫|日本語分かる|効いてる|恥さらし|終わってる)"
+    },
+    {
       "id": "sexual_content.explicit_or_vulgar",
       "category": "sexual_content",
       "score": 100,
@@ -204,6 +210,12 @@
       "category": "drug_content",
       "score": 100,
       "pattern": "(?:違法薬物|麻薬|大麻|マリファナ|カンナビス|覚醒剤|シャブ|コカイン|ヘロイン|メタンフェタミン|アンフェタミン|フェンタニル|ケタミン|危険ドラッグ|脱法ドラッグ|大麻グミ|オーバードーズ|(?:^|[^a-z0-9])(?:mdma|lsd|thc|cbd|od(?!缶))(?:$|[^a-z0-9]))"
+    },
+    {
+      "id": "drug_content.ai_review_cue",
+      "category": "drug_content",
+      "score": 10,
+      "pattern": "(?:飛べるやつ|キマるやつ|ブツを用意|ネタを仕入|草を(?:吸|売|買)|粉を(?:吸|売|買))"
     }
   ]
 }

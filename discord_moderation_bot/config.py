@@ -25,6 +25,7 @@ class BotConfig:
     moderation_backend: str = "local"
     groq_api_key: Optional[str] = None
     groq_text_model: str = "openai/gpt-oss-120b"
+    groq_fallback_text_model: str = "openai/gpt-oss-20b"
     groq_speech_model: str = "whisper-large-v3"
     groq_confidence_threshold: int = 50
     groq_cynicism_confidence_threshold: int = 80
@@ -90,6 +91,10 @@ class BotConfig:
         groq_text_model = (
             values.get("GROQ_TEXT_MODEL", "openai/gpt-oss-120b").strip()
             or "openai/gpt-oss-120b"
+        )
+        groq_fallback_text_model = (
+            values.get("GROQ_FALLBACK_TEXT_MODEL", "openai/gpt-oss-20b").strip()
+            or "openai/gpt-oss-20b"
         )
         groq_speech_model = (
             values.get("GROQ_SPEECH_MODEL", "whisper-large-v3").strip()
@@ -170,6 +175,7 @@ class BotConfig:
             moderation_backend=moderation_backend,
             groq_api_key=groq_api_key,
             groq_text_model=groq_text_model,
+            groq_fallback_text_model=groq_fallback_text_model,
             groq_speech_model=groq_speech_model,
             groq_confidence_threshold=groq_confidence_threshold,
             groq_cynicism_confidence_threshold=groq_cynicism_confidence_threshold,

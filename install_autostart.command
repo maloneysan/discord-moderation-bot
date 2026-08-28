@@ -55,6 +55,12 @@ fi
 /usr/bin/ditto "$BOT_DIR/discord_moderation_bot" "$RUNTIME_DIR/discord_moderation_bot"
 /usr/bin/ditto "$BOT_DIR/config" "$RUNTIME_DIR/config"
 /usr/bin/ditto "$BOT_DIR/scripts" "$RUNTIME_DIR/scripts"
+if [[ -d "$BOT_DIR/models/vosk-model-small-ja-0.22" ]]; then
+  /bin/mkdir -p "$RUNTIME_DIR/models"
+  /usr/bin/ditto \
+    "$BOT_DIR/models/vosk-model-small-ja-0.22" \
+    "$RUNTIME_DIR/models/vosk-model-small-ja-0.22"
+fi
 /bin/cp "$BOT_DIR/run.py" "$RUNTIME_DIR/run.py"
 /bin/chmod 700 "$RUNTIME_DIR/scripts/run_from_keychain.zsh"
 /bin/cp "$SOURCE_PLIST" "$DESTINATION_PLIST"

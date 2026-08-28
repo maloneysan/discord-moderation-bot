@@ -161,6 +161,11 @@ class ModerationEngineTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertFalse(self.engine.analyze(text).detected)
 
+    def test_partial_attribute_or_mockery_is_an_ai_review_signal(self) -> None:
+        self.assertTrue(self.engine.has_moderation_signal("外国人について話す"))
+        self.assertTrue(self.engine.has_moderation_signal("必死すぎる"))
+        self.assertFalse(self.engine.has_moderation_signal("今日はいい天気です"))
+
     def test_general_joke_is_not_detected(self) -> None:
         self.assertFalse(self.engine.analyze("この猫の動画おもしろくて笑った").detected)
 

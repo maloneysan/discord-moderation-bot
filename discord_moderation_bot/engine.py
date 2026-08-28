@@ -190,14 +190,7 @@ class ModerationEngine:
         if self._matches_any(self._exceptions, candidates):
             return DetectionResult.empty()
 
-        scores = {category: 0 for category in self._categories}
-        matched_ids: Dict[str, List[str]] = {category: [] for category in self._categories}
-
-        for rule in self._rules:
-            if any(rule.pattern.search(candidate) for candidate in candidates):
-                scores[rule.category] += rule.score
-                matched_ids[rule.category].append(rule.rule_id)
-
+        scores, matched_ids = self._score_candidates(candidates)
         detections: List[CategoryDetection] = []
         for category, label in self._categories.items():
             score = min(scores[category], 100)
@@ -213,6 +206,30 @@ class ModerationEngine:
                 )
 
         return DetectionResult(detected=bool(detections), detections=tuple(detections))
+
+    def has_moderation_signal(self, text: str) -> bool:
+        """Return whether a partial local rule warrants expensive AI review."""
+        normalized = normalize_text(text)
+        if not normalized:
+            return False
+        candidates = self._candidate_forms(normalized)
+        if self._matches_any(self._exceptions, candidates):
+            return False
+        _, matched_ids = self._score_candidates(candidates)
+        return any(matched_ids.values())
+
+    def _score_candidates(
+        self, candidates: Sequence[str]
+    ) -> Tuple[Dict[str, int], Dict[str, List[str]]]:
+        scores = {category: 0 for category in self._categories}
+        matched_ids: Dict[str, List[str]] = {category: [] for category in self._categories}
+
+        for rule in self._rules:
+            if any(rule.pattern.search(candidate) for candidate in candidates):
+                scores[rule.category] += rule.score
+                matched_ids[rule.category].append(rule.rule_id)
+
+        return scores, matched_ids
 
     @staticmethod
     def _candidate_forms(normalized: str) -> Tuple[str, ...]:

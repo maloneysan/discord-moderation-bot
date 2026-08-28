@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import json
 import logging
 import time
@@ -23,6 +24,7 @@ class ModerationService(Protocol):
         *,
         reply_context: Optional[str] = None,
         recent_context: Sequence[str] = (),
+        request_source: str = "text",
     ) -> DetectionResult: ...
 
     async def transcribe_wav(self, wav_audio: bytes) -> str: ...
@@ -42,6 +44,7 @@ class LocalModerationService:
         *,
         reply_context: Optional[str] = None,
         recent_context: Sequence[str] = (),
+        request_source: str = "text",
     ) -> DetectionResult:
         return self._engine.analyze(text)
 
@@ -202,11 +205,18 @@ required JSON schema and never repeat or transform the source text."""
         local_engine: ModerationEngine,
         *,
         text_model: str = "openai/gpt-oss-120b",
+        fallback_text_model: str = "openai/gpt-oss-20b",
         speech_model: str = "whisper-large-v3",
         confidence_threshold: int = 50,
         cynicism_confidence_threshold: int = 80,
         timeout_seconds: float = 20.0,
         max_concurrency: int = 4,
+        text_interval_seconds: float = 4.0,
+        voice_analysis_interval_seconds: float = 45.0,
+        audio_interval_seconds: float = 4.0,
+        text_daily_request_limit: int = 70,
+        voice_daily_request_limit: int = 30,
+        local_speech_transcriber: Optional[object] = None,
     ) -> None:
         if not api_key:
             raise ValueError("Groq API key is required")
@@ -219,6 +229,7 @@ required JSON schema and never repeat or transform the source text."""
         self._api_key = api_key
         self._local_engine = local_engine
         self._text_model = text_model
+        self._fallback_text_model = fallback_text_model
         self._speech_model = speech_model
         self._threshold = confidence_threshold
         self._cynicism_threshold = cynicism_confidence_threshold
@@ -226,8 +237,22 @@ required JSON schema and never repeat or transform the source text."""
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._text_rate_lock = asyncio.Lock()
         self._audio_rate_lock = asyncio.Lock()
+        self._text_interval_seconds = max(0.0, text_interval_seconds)
+        self._voice_analysis_interval_seconds = max(
+            self._text_interval_seconds, voice_analysis_interval_seconds
+        )
+        self._audio_interval_seconds = max(0.0, audio_interval_seconds)
+        self._text_daily_request_limit = max(1, text_daily_request_limit)
+        self._voice_daily_request_limit = max(1, voice_daily_request_limit)
+        self._text_request_times = deque()
+        self._voice_request_times = deque()
         self._next_text_request_at = 0.0
+        self._next_voice_analysis_at = 0.0
         self._next_audio_request_at = 0.0
+        self._text_cooldown_until = 0.0
+        self._primary_text_cooldown_until = 0.0
+        self._audio_cooldown_until = 0.0
+        self._local_speech_transcriber = local_speech_transcriber
         self._session: Optional[aiohttp.ClientSession] = None
         self._successful_text_requests = 0
         self._successful_audio_requests = 0
@@ -235,6 +260,10 @@ required JSON schema and never repeat or transform the source text."""
         self._text_fallbacks = 0
         self._rate_limit_failures = 0
         self._rejected_audio_segments = 0
+        self._quota_skipped_text_requests = 0
+        self._quota_skipped_audio_requests = 0
+        self._local_audio_fallbacks = 0
+        self._fallback_model_requests = 0
         self._last_text_success_at: Optional[float] = None
         self._last_audio_success_at: Optional[float] = None
         self._last_failure_at: Optional[float] = None
@@ -251,6 +280,9 @@ required JSON schema and never repeat or transform the source text."""
         return (
             f"成功: テキスト{self._successful_text_requests}件/音声{self._successful_audio_requests}件、"
             f"API失敗: {self._failed_requests}件、429: {self._rate_limit_failures}件、"
+            f"混雑回避: テキスト{self._quota_skipped_text_requests}件/音声{self._quota_skipped_audio_requests}件、"
+            f"20B退避: {self._fallback_model_requests}件、"
+            f"ローカル音声: {self._local_audio_fallbacks}件、"
             f"低品質音声除外: {self._rejected_audio_segments}件{fallback}"
         )
 
@@ -268,8 +300,17 @@ required JSON schema and never repeat or transform the source text."""
         *,
         reply_context: Optional[str] = None,
         recent_context: Sequence[str] = (),
+        request_source: str = "text",
     ) -> DetectionResult:
         local_result = self._local_engine.analyze(text)
+        if local_result.detected:
+            return local_result
+        if not reply_context and not self._local_engine.has_moderation_signal(text):
+            return local_result
+        if not await self._reserve_moderation_slot(request_source):
+            self._text_fallbacks += 1
+            self._quota_skipped_text_requests += 1
+            return local_result
         try:
             payload = await self._post_chat(text, reply_context, recent_context)
             remote_result = self._result_from_payload(payload)
@@ -288,6 +329,9 @@ required JSON schema and never repeat or transform the source text."""
     async def transcribe_wav(self, wav_audio: bytes) -> str:
         if not wav_audio:
             return ""
+        if not await self._reserve_audio_slot():
+            self._quota_skipped_audio_requests += 1
+            return await self._local_transcribe(wav_audio)
         try:
             payload = await self._post_audio(wav_audio)
             self._successful_audio_requests += 1
@@ -295,6 +339,7 @@ required JSON schema and never repeat or transform the source text."""
             transcript = self._trusted_transcript(payload)
             if not transcript:
                 self._rejected_audio_segments += 1
+                return await self._local_transcribe(wav_audio)
             return transcript
         except Exception as exc:
             self._record_failure(exc, request_type="audio")
@@ -302,7 +347,7 @@ required JSON schema and never repeat or transform the source text."""
                 "External speech recognition failed; audio chunk discarded (error=%s)",
                 type(exc).__name__,
             )
-            return ""
+            return await self._local_transcribe(wav_audio)
 
     async def _post_chat(
         self,
@@ -310,7 +355,6 @@ required JSON schema and never repeat or transform the source text."""
         reply_context: Optional[str],
         recent_context: Sequence[str] = (),
     ) -> Mapping[str, Any]:
-        await self._respect_rate_limit("text")
         request_body = {
             "model": self._text_model,
             "messages": [
@@ -333,6 +377,7 @@ required JSON schema and never repeat or transform the source text."""
             ],
             "temperature": 0,
             "reasoning_effort": "low",
+            "max_completion_tokens": 350,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -342,9 +387,37 @@ required JSON schema and never repeat or transform the source text."""
                 },
             },
         }
-        response = await self._request_json(
-            f"{GROQ_API_BASE}/chat/completions", json_body=request_body
-        )
+        current = asyncio.get_running_loop().time()
+        models = [self._text_model]
+        if self._fallback_text_model and self._fallback_text_model != self._text_model:
+            if current < self._primary_text_cooldown_until:
+                models = [self._fallback_text_model]
+            else:
+                models.append(self._fallback_text_model)
+        response = None
+        for index, model in enumerate(models):
+            try:
+                response = await self._request_json(
+                    f"{GROQ_API_BASE}/chat/completions",
+                    json_body={**request_body, "model": model},
+                )
+                if model == self._fallback_text_model:
+                    self._fallback_model_requests += 1
+                break
+            except _RetryableApiError as exc:
+                can_fallback = (
+                    exc.status == 429
+                    and index + 1 < len(models)
+                    and model == self._text_model
+                )
+                if not can_fallback:
+                    raise
+                self._rate_limit_failures += 1
+                self._primary_text_cooldown_until = current + max(
+                    exc.retry_after_seconds, 60.0
+                )
+        if response is None:
+            raise RuntimeError("text moderation API returned no response")
         content = response["choices"][0]["message"]["content"]
         parsed = json.loads(content)
         if not isinstance(parsed, dict):
@@ -352,7 +425,6 @@ required JSON schema and never repeat or transform the source text."""
         return parsed
 
     async def _post_audio(self, wav_audio: bytes) -> Mapping[str, Any]:
-        await self._respect_rate_limit("audio")
         for attempt in range(2):
             form = aiohttp.FormData()
             form.add_field("model", self._speech_model)
@@ -409,24 +481,66 @@ required JSON schema and never repeat or transform the source text."""
         self._last_failure_type = type(exc).__name__
         if isinstance(exc, _RetryableApiError) and exc.status == 429:
             self._rate_limit_failures += 1
+            cooldown_until = time.monotonic() + max(exc.retry_after_seconds, 60.0)
+            if request_type == "text":
+                self._text_cooldown_until = max(
+                    self._text_cooldown_until, cooldown_until
+                )
+            else:
+                self._audio_cooldown_until = max(
+                    self._audio_cooldown_until, cooldown_until
+                )
 
-    async def _respect_rate_limit(self, request_type: str) -> None:
-        if request_type == "text":
-            lock = self._text_rate_lock
-            interval = 2.1  # Groq Free Plan: 30 requests/minute.
-            attribute = "_next_text_request_at"
-        else:
-            lock = self._audio_rate_lock
-            interval = 3.1  # Groq Free Plan: 20 requests/minute.
-            attribute = "_next_audio_request_at"
-        async with lock:
-            loop = asyncio.get_running_loop()
-            current = loop.time()
-            next_allowed = getattr(self, attribute)
-            if next_allowed > current:
-                await asyncio.sleep(next_allowed - current)
-                current = loop.time()
-            setattr(self, attribute, current + interval)
+    async def _reserve_moderation_slot(self, request_source: str) -> bool:
+        async with self._text_rate_lock:
+            current = asyncio.get_running_loop().time()
+            if current < self._text_cooldown_until:
+                return False
+            if current < self._next_text_request_at:
+                return False
+            request_times = (
+                self._voice_request_times
+                if request_source == "voice"
+                else self._text_request_times
+            )
+            daily_limit = (
+                self._voice_daily_request_limit
+                if request_source == "voice"
+                else self._text_daily_request_limit
+            )
+            cutoff = current - 86_400
+            while request_times and request_times[0] < cutoff:
+                request_times.popleft()
+            if len(request_times) >= daily_limit:
+                return False
+            if request_source == "voice" and current < self._next_voice_analysis_at:
+                return False
+            request_times.append(current)
+            self._next_text_request_at = current + self._text_interval_seconds
+            if request_source == "voice":
+                self._next_voice_analysis_at = (
+                    current + self._voice_analysis_interval_seconds
+                )
+            return True
+
+    async def _reserve_audio_slot(self) -> bool:
+        async with self._audio_rate_lock:
+            current = asyncio.get_running_loop().time()
+            if current < self._audio_cooldown_until:
+                return False
+            if current < self._next_audio_request_at:
+                return False
+            self._next_audio_request_at = current + self._audio_interval_seconds
+            return True
+
+    async def _local_transcribe(self, wav_audio: bytes) -> str:
+        transcriber = self._local_speech_transcriber
+        if transcriber is None:
+            return ""
+        transcript = await transcriber.transcribe_wav(wav_audio)
+        if transcript:
+            self._local_audio_fallbacks += 1
+        return transcript
 
     async def _request_json(
         self,
@@ -446,7 +560,13 @@ required JSON schema and never repeat or transform the source text."""
                     json=json_body,
                     data=form_data,
                 ) as response:
-                    if response.status == 429 or response.status >= 500:
+                    if response.status == 429:
+                        raise _RetryableApiError(
+                            f"API status {response.status}",
+                            status=response.status,
+                            retry_after_seconds=_retry_after_seconds(response.headers),
+                        )
+                    if response.status >= 500:
                         if attempt + 1 < attempts:
                             await asyncio.sleep(1)
                             continue
@@ -511,9 +631,34 @@ required JSON schema and never repeat or transform the source text."""
 
 
 class _RetryableApiError(RuntimeError):
-    def __init__(self, message: str, status: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        status: Optional[int] = None,
+        retry_after_seconds: float = 0.0,
+    ) -> None:
         super().__init__(message)
         self.status = status
+        self.retry_after_seconds = max(0.0, retry_after_seconds)
+
+
+def _retry_after_seconds(headers: Mapping[str, str]) -> float:
+    raw = headers.get("Retry-After", "").strip()
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        pass
+    raw = headers.get("x-ratelimit-reset-tokens", "").strip().casefold()
+    try:
+        if raw.endswith("ms"):
+            return max(0.0, float(raw[:-2]) / 1000)
+        if raw.endswith("s"):
+            return max(0.0, float(raw[:-1]))
+        if raw.endswith("m"):
+            return max(0.0, float(raw[:-1]) * 60)
+    except ValueError:
+        return 0.0
+    return 0.0
 
 
 def _merge_results(

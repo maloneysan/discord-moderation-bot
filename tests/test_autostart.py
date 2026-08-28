@@ -45,6 +45,9 @@ class AutostartConfigurationTests(unittest.TestCase):
         self.assertEqual(values["VOICE_AUTO_JOIN"], "true")
         self.assertEqual(values["MODERATION_BACKEND"], "groq")
         self.assertEqual(values["GROQ_TEXT_MODEL"], "openai/gpt-oss-120b")
+        self.assertEqual(
+            values["GROQ_FALLBACK_TEXT_MODEL"], "openai/gpt-oss-20b"
+        )
         self.assertEqual(values["GROQ_SPEECH_MODEL"], "whisper-large-v3")
 
     def test_installer_retries_launch_agent_registration(self) -> None:

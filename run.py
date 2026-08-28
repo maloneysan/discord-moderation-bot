@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 import sys
 
 from discord_moderation_bot.bot import create_client
 from discord_moderation_bot.config import BotConfig, ConfigError
 from discord_moderation_bot.engine import ModerationEngine, RuleConfigurationError
 from discord_moderation_bot.service import GroqModerationService, LocalModerationService
+from discord_moderation_bot.speech import VoskSpeechTranscriber
 
 
 def main() -> int:
@@ -25,16 +27,23 @@ def main() -> int:
         return 2
 
     if config.moderation_backend == "groq":
+        local_speech = VoskSpeechTranscriber(
+            Path(__file__).resolve().parent
+            / "models"
+            / "vosk-model-small-ja-0.22"
+        )
         service = GroqModerationService(
             config.groq_api_key or "",
             engine,
             text_model=config.groq_text_model,
+            fallback_text_model=config.groq_fallback_text_model,
             speech_model=config.groq_speech_model,
             confidence_threshold=config.groq_confidence_threshold,
             cynicism_confidence_threshold=(
                 config.groq_cynicism_confidence_threshold
             ),
             timeout_seconds=config.groq_timeout_seconds,
+            local_speech_transcriber=local_speech,
         )
     else:
         service = LocalModerationService(engine)

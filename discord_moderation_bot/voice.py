@@ -98,7 +98,7 @@ class VoiceTranscriptModerator:
         self._registry = registry or VoiceAlertRegistry()
 
     async def process(self, guild_id: int, user_id: int, transcript: str) -> int:
-        result = await self._service.analyze(transcript)
+        result = await self._service.analyze(transcript, request_source="voice")
         if not result.detected:
             return 0
 

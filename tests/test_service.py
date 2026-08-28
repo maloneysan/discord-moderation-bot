@@ -1,9 +1,10 @@
+import json
 from pathlib import Path
 import unittest
 from unittest.mock import AsyncMock
 
 from discord_moderation_bot.engine import ModerationEngine
-from discord_moderation_bot.service import GroqModerationService
+from discord_moderation_bot.service import GroqModerationService, _RetryableApiError
 
 
 RULES_PATH = Path(__file__).resolve().parent.parent / "config" / "rules.json"
@@ -73,15 +74,110 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
         result = await service.analyze("うお")
 
         self.assertEqual({item.category for item in result.detections}, {"cynicism"})
+        service._post_chat.assert_not_awaited()
 
     async def test_api_failure_uses_local_fallback_without_source_logging(self) -> None:
         service = self.make_service()
         service._post_chat = AsyncMock(side_effect=RuntimeError("network"))
 
-        result = await service.analyze("外国人は出ていけ")
+        result = await service.analyze("外国人についての婉曲表現")
 
-        self.assertTrue(result.detected)
+        self.assertFalse(result.detected)
         self.assertEqual(service._failed_requests, 1)
+
+    async def test_token_aware_gate_skips_excess_remote_requests(self) -> None:
+        service = GroqModerationService(
+            "not-a-real-key",
+            ModerationEngine.from_json(RULES_PATH),
+            text_interval_seconds=60,
+        )
+        service._post_chat = AsyncMock(
+            return_value={
+                "discrimination": {"detected": False, "confidence": 1, "reason": ""},
+                "cynicism": {"detected": False, "confidence": 1, "reason": ""},
+                "sexual_content": {"detected": False, "confidence": 1, "reason": ""},
+                "sensitive_term": {"detected": False, "confidence": 1, "reason": ""},
+                "drug_content": {"detected": False, "confidence": 1, "reason": ""},
+            }
+        )
+
+        await service.analyze("外国人についての一件目")
+        await service.analyze("外国人についての二件目")
+
+        self.assertEqual(service._post_chat.await_count, 1)
+        self.assertEqual(service._quota_skipped_text_requests, 1)
+
+    async def test_ordinary_message_does_not_spend_remote_quota(self) -> None:
+        service = self.make_service()
+        service._post_chat = AsyncMock()
+
+        result = await service.analyze("今日はいい天気ですね")
+
+        self.assertFalse(result.detected)
+        service._post_chat.assert_not_awaited()
+
+    async def test_primary_429_uses_secondary_text_model(self) -> None:
+        service = self.make_service()
+        category_payload = {
+            "discrimination": {"detected": True, "confidence": 90, "reason": "排除です。"},
+            "cynicism": {"detected": False, "confidence": 1, "reason": ""},
+            "sexual_content": {"detected": False, "confidence": 1, "reason": ""},
+            "sensitive_term": {"detected": False, "confidence": 1, "reason": ""},
+            "drug_content": {"detected": False, "confidence": 1, "reason": ""},
+        }
+        service._request_json = AsyncMock(
+            side_effect=[
+                _RetryableApiError("daily tokens", status=429, retry_after_seconds=120),
+                {
+                    "choices": [
+                        {"message": {"content": json.dumps(category_payload)}}
+                    ]
+                },
+            ]
+        )
+
+        payload = await service._post_chat("外国人について", None, ())
+
+        self.assertEqual(payload, category_payload)
+        calls = service._request_json.await_args_list
+        self.assertEqual(calls[0].kwargs["json_body"]["model"], "openai/gpt-oss-120b")
+        self.assertEqual(calls[1].kwargs["json_body"]["model"], "openai/gpt-oss-20b")
+        self.assertEqual(service._fallback_model_requests, 1)
+
+    async def test_audio_api_failure_uses_local_speech_fallback(self) -> None:
+        fallback = AsyncMock()
+        fallback.transcribe_wav.return_value = "ローカル認識結果"
+        service = GroqModerationService(
+            "not-a-real-key",
+            ModerationEngine.from_json(RULES_PATH),
+            local_speech_transcriber=fallback,
+        )
+        service._post_audio = AsyncMock(side_effect=RuntimeError("audio-api"))
+
+        transcript = await service.transcribe_wav(b"RIFF-test")
+
+        self.assertEqual(transcript, "ローカル認識結果")
+        fallback.transcribe_wav.assert_awaited_once_with(b"RIFF-test")
+        self.assertEqual(service._local_audio_fallbacks, 1)
+
+    async def test_audio_gate_falls_back_instead_of_building_a_queue(self) -> None:
+        fallback = AsyncMock()
+        fallback.transcribe_wav.return_value = "二件目のローカル認識"
+        service = GroqModerationService(
+            "not-a-real-key",
+            ModerationEngine.from_json(RULES_PATH),
+            audio_interval_seconds=60,
+            local_speech_transcriber=fallback,
+        )
+        service._post_audio = AsyncMock(return_value={"text": "一件目の外部認識"})
+
+        first = await service.transcribe_wav(b"RIFF-one")
+        second = await service.transcribe_wav(b"RIFF-two")
+
+        self.assertEqual(first, "一件目の外部認識")
+        self.assertEqual(second, "二件目のローカル認識")
+        self.assertEqual(service._post_audio.await_count, 1)
+        self.assertEqual(service._quota_skipped_audio_requests, 1)
 
     async def test_category_specific_cynicism_threshold_is_enforced(self) -> None:
         service = self.make_service(threshold=60)
@@ -158,10 +254,12 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        await service.analyze("現在", recent_context=("一", "二", "三", "四"))
+        await service.analyze(
+            "外国人について", recent_context=("一", "二", "三", "四")
+        )
 
         service._post_chat.assert_awaited_once_with(
-            "現在", None, ("一", "二", "三", "四")
+            "外国人について", None, ("一", "二", "三", "四")
         )
 
     def test_low_confidence_and_no_speech_segments_are_removed(self) -> None:

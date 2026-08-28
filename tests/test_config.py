@@ -118,6 +118,7 @@ class BotConfigTests(unittest.TestCase):
                 "MODERATION_BACKEND": "groq",
                 "GROQ_API_KEY": "groq-secret",
                 "GROQ_TEXT_MODEL": "text-model",
+                "GROQ_FALLBACK_TEXT_MODEL": "fallback-text-model",
                 "GROQ_SPEECH_MODEL": "speech-model",
                 "GROQ_CONFIDENCE_THRESHOLD": "42",
                 "GROQ_CYNICISM_CONFIDENCE_THRESHOLD": "81",
@@ -130,6 +131,7 @@ class BotConfigTests(unittest.TestCase):
             }
         )
         self.assertEqual(config.groq_text_model, "text-model")
+        self.assertEqual(config.groq_fallback_text_model, "fallback-text-model")
         self.assertEqual(config.groq_speech_model, "speech-model")
         self.assertEqual(config.groq_confidence_threshold, 42)
         self.assertEqual(config.groq_cynicism_confidence_threshold, 81)
