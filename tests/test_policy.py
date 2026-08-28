@@ -81,16 +81,19 @@ class MessagePolicyTests(unittest.TestCase):
             )
         )
 
-    def test_alert_does_not_include_mentions_or_source_content(self) -> None:
+    def test_alert_includes_safe_source_excerpt_without_mentions(self) -> None:
         alert = build_alert_text(
             [
                 detection("discrimination", "差別表現", "属性を理由に排除する内容です。"),
                 detection("cynicism", "冷笑", "相手を嘲笑する内容です。"),
             ],
             "＠everyone `話者`",
+            source_excerpt="@everyone 外国人は出ていけ `今すぐ`",
         )
         self.assertNotIn("@", alert)
-        self.assertNotIn("外国人は出ていけ", alert)
+        self.assertIn("該当発言：", alert)
+        self.assertIn("外国人は出ていけ", alert)
+        self.assertIn("＠everyone", alert)
         self.assertIn("差別表現・冷笑", alert)
         self.assertIn("発言者：＠everyone '話者'", alert)
         self.assertIn("問題だった点：", alert)
@@ -127,17 +130,34 @@ class MessagePolicyTests(unittest.TestCase):
         self.assertIn("性的表現・要注意語（ADHD）・薬物関連", alert)
         self.assertNotIn("差別表現の可能性", alert)
 
-    def test_voice_alert_has_no_speaker_mention_or_transcript(self) -> None:
+    def test_voice_alert_has_safe_transcript_without_speaker_mention(self) -> None:
         alert = build_voice_alert_text(
             [detection("discrimination", "差別表現", "属性への排除です。")],
             "VC話者",
+            source_excerpt="外国人は出ていけ",
         )
         self.assertIn("VC", alert)
         self.assertIn("発言者：VC話者", alert)
         self.assertIn("問題だった点：", alert)
         self.assertIn("・差別表現：", alert)
         self.assertNotIn("@", alert)
-        self.assertNotIn("外国人は出ていけ", alert)
+        self.assertIn("該当発言：「外国人は出ていけ」", alert)
+
+    def test_source_excerpt_is_single_line_markdown_safe_and_bounded(self) -> None:
+        source = "@everyone **侮辱**\n" + "長" * 300
+        alert = build_alert_text(
+            [detection("cynicism", "冷笑", "相手への嘲笑です。")],
+            "話者",
+            source_excerpt=source,
+        )
+
+        excerpt_line = next(
+            line for line in alert.splitlines() if line.startswith("該当発言：")
+        )
+        self.assertNotIn("@", excerpt_line)
+        self.assertNotIn("*", excerpt_line)
+        self.assertLessEqual(len(excerpt_line), len("該当発言：「」") + 240)
+        self.assertTrue(excerpt_line.endswith("…」"))
 
 
 if __name__ == "__main__":

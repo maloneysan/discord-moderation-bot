@@ -21,7 +21,7 @@ from .service import ModerationService
 
 LOGGER = logging.getLogger(__name__)
 VoiceAlertSender = Callable[
-    [int, int, List[CategoryDetection]], Awaitable[None]
+    [int, int, List[CategoryDetection], str], Awaitable[None]
 ]
 VoiceNoticeSender = Callable[[int, Optional[int], str], Awaitable[None]]
 
@@ -108,7 +108,12 @@ class VoiceTranscriptModerator:
             return 0
         claimed_detections = [detections[category] for category in claimed]
         try:
-            await self._alert_sender(guild_id, user_id, claimed_detections)
+            await self._alert_sender(
+                guild_id,
+                user_id,
+                claimed_detections,
+                transcript,
+            )
         except Exception:
             self._registry.release(guild_id, user_id, claimed)
             raise

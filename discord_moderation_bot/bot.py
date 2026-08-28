@@ -242,7 +242,11 @@ class ModerationClient(discord.Client):
         )
         if alert_channel_id is None:
             await message.reply(
-                build_alert_text(detections, author_name),
+                build_alert_text(
+                    detections,
+                    author_name,
+                    source_excerpt=message.content,
+                ),
                 mention_author=False,
                 allowed_mentions=allowed_mentions,
             )
@@ -255,7 +259,12 @@ class ModerationClient(discord.Client):
         if alert_guild is None or alert_guild.id != guild_id:
             raise RuntimeError("configured alert channel is outside the source guild")
         await alert_channel.send(
-            build_alert_text(detections, author_name, jump_url=message.jump_url),
+            build_alert_text(
+                detections,
+                author_name,
+                jump_url=message.jump_url,
+                source_excerpt=message.content,
+            ),
             allowed_mentions=allowed_mentions,
         )
 
@@ -264,6 +273,7 @@ class ModerationClient(discord.Client):
         guild_id: int,
         user_id: int,
         detections: list[CategoryDetection],
+        transcript: str = "",
     ) -> None:
         alert_channel_id = self._alert_channels.get(guild_id)
         if alert_channel_id is None:
@@ -285,7 +295,11 @@ class ModerationClient(discord.Client):
             or f"ユーザーID {user_id}"
         )
         await alert_channel.send(
-            build_voice_alert_text(detections, speaker_name),
+            build_voice_alert_text(
+                detections,
+                speaker_name,
+                source_excerpt=transcript,
+            ),
             allowed_mentions=discord.AllowedMentions.none(),
         )
         LOGGER.info(

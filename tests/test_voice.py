@@ -61,7 +61,7 @@ class VoiceAlertRegistryTests(unittest.TestCase):
 
 
 class VoiceTranscriptModeratorTests(unittest.IsolatedAsyncioTestCase):
-    async def test_transcript_is_ephemeral_and_alert_contains_only_labels(self) -> None:
+    async def test_transcript_is_passed_to_alert_but_not_retained(self) -> None:
         sender = AsyncMock()
         service = LocalModerationService(ModerationEngine.from_json(RULES_PATH))
         moderator = VoiceTranscriptModerator(
@@ -75,10 +75,11 @@ class VoiceTranscriptModeratorTests(unittest.IsolatedAsyncioTestCase):
         await moderator.process(100, 200, transcript)
 
         sender.assert_awaited_once()
-        guild_id, user_id, detections = sender.await_args.args
+        guild_id, user_id, detections, source_excerpt = sender.await_args.args
         self.assertEqual((guild_id, user_id), (100, 200))
         self.assertEqual([item.label for item in detections], ["差別表現"])
         self.assertIn("排除", detections[0].reason)
+        self.assertEqual(source_excerpt, transcript)
         self.assertNotIn(transcript, repr(moderator.__dict__))
 
     async def test_failed_alert_is_released_for_retry(self) -> None:

@@ -40,6 +40,7 @@ def build_alert_text(
     detections: Sequence[CategoryDetection],
     author_name: str,
     jump_url: Optional[str] = None,
+    source_excerpt: str = "",
 ) -> str:
     if not detections:
         raise ValueError("at least one detection is required")
@@ -49,6 +50,7 @@ def build_alert_text(
         "⚠️ モデレーション対象表現の可能性を検知しました"
         f"（種別：{category_text}）\n"
         f"発言者：{_safe_inline(author_name, '不明なユーザー', 80)}\n"
+        f"該当発言：{_safe_excerpt(source_excerpt)}\n"
         f"問題だった点：\n{_problem_summary(detections)}\n"
         "互いを尊重した表現に言い換えてください。"
     )
@@ -58,7 +60,9 @@ def build_alert_text(
 
 
 def build_voice_alert_text(
-    detections: Sequence[CategoryDetection], speaker_name: str
+    detections: Sequence[CategoryDetection],
+    speaker_name: str,
+    source_excerpt: str = "",
 ) -> str:
     if not detections:
         raise ValueError("at least one detection is required")
@@ -67,6 +71,7 @@ def build_voice_alert_text(
         "⚠️ VCでモデレーション対象表現の可能性を検知しました"
         f"（種別：{category_text}）\n"
         f"発言者：{_safe_inline(speaker_name, '不明なユーザー', 80)}\n"
+        f"該当発言：{_safe_excerpt(source_excerpt)}\n"
         f"問題だった点：\n{_problem_summary(detections)}\n"
         "互いを尊重した発言を心がけてください。"
     )
@@ -91,3 +96,21 @@ def _safe_inline(value: str, fallback: str, limit: int) -> str:
     cleaned = " ".join(str(value).split()).strip()
     cleaned = cleaned.replace("@", "＠").replace("`", "'")
     return (cleaned or fallback)[:limit]
+
+
+def _safe_excerpt(value: str, limit: int = 240) -> str:
+    cleaned = " ".join(str(value).split()).strip()
+    for unsafe, replacement in (
+        ("@", "＠"),
+        ("`", "'"),
+        ("*", "＊"),
+        ("_", "＿"),
+        ("~", "〜"),
+        ("|", "｜"),
+    ):
+        cleaned = cleaned.replace(unsafe, replacement)
+    if not cleaned:
+        return "（取得できませんでした）"
+    if len(cleaned) > limit:
+        cleaned = cleaned[: limit - 1] + "…"
+    return f"「{cleaned}」"
