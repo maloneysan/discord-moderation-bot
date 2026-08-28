@@ -31,7 +31,11 @@ class ModerationEngineTests(unittest.TestCase):
         self.assertEqual(self.categories_for("外国人は出ていけ"), {"discrimination"})
 
     def test_targeted_ridicule_is_cynicism(self) -> None:
-        self.assertEqual(self.categories_for("お前、必死で草"), {"cynicism"})
+        result = self.engine.analyze("お前、必死で草")
+        self.assertEqual(
+            {item.category for item in result.detections}, {"cynicism"}
+        )
+        self.assertIn("能力や言動", result.detections[0].reason)
 
     def test_implicit_target_ridicule_is_cynicism(self) -> None:
         self.assertEqual(self.categories_for("そんなこともできないの"), {"cynicism"})
@@ -46,12 +50,28 @@ class ModerationEngineTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(self.categories_for(text), {"cynicism"})
         self.assertFalse(self.engine.analyze("うお座の話").detected)
+        self.assertIn(
+            "サーバーで冷笑として指定",
+            self.engine.analyze("うお").detections[0].reason,
+        )
 
     def test_dowa_variants_are_cynicism_but_dwarf_is_not(self) -> None:
         for text in ("どわー", "どわ〜", "ドワーーw"):
             with self.subTest(text=text):
                 self.assertEqual(self.categories_for(text), {"cynicism"})
         self.assertFalse(self.engine.analyze("ドワーフの冒険").detected)
+
+    def test_ambiguous_reactions_without_a_target_are_not_cynicism(self) -> None:
+        for text in (
+            "うわぁ…すごい景色",
+            "きっつ…今日は仕事が多い",
+            "いたた…転んだ",
+            "はいはい、確認します",
+            "知らんけど、たぶん雨",
+            "もういいよ、休もう",
+        ):
+            with self.subTest(text=text):
+                self.assertFalse(self.engine.analyze(text).detected)
 
     def test_gendered_emasculation_is_discrimination(self) -> None:
         for text in (

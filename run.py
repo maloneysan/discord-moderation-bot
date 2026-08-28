@@ -31,6 +31,9 @@ def main() -> int:
             text_model=config.groq_text_model,
             speech_model=config.groq_speech_model,
             confidence_threshold=config.groq_confidence_threshold,
+            cynicism_confidence_threshold=(
+                config.groq_cynicism_confidence_threshold
+            ),
             timeout_seconds=config.groq_timeout_seconds,
         )
     else:

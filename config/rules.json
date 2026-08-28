@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "threshold": 80,
   "categories": {
     "discrimination": {
@@ -166,7 +166,7 @@
     {
       "id": "cynicism.mocking_reaction",
       "category": "cynicism",
-      "score": 85,
+      "score": 55,
       "pattern": "(?:(?:うわ|ウワ)ぁ+(?:…|\\.{2,})|きっつ+(?:…|\\.{2,})|いたた+(?:…|\\.{2,}))(?:(?:笑|草|w+))?"
     },
     {
@@ -184,7 +184,7 @@
     {
       "id": "cynicism.laughter",
       "category": "cynicism",
-      "score": 25,
+      "score": 20,
       "pattern": "(?:草|笑|w{2,})"
     },
     {

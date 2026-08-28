@@ -27,6 +27,7 @@ class BotConfig:
     groq_text_model: str = "openai/gpt-oss-120b"
     groq_speech_model: str = "whisper-large-v3"
     groq_confidence_threshold: int = 50
+    groq_cynicism_confidence_threshold: int = 80
     groq_timeout_seconds: float = 20.0
     voice_chunk_seconds: int = 10
     context_message_count: int = 3
@@ -100,6 +101,12 @@ class BotConfig:
             0,
             100,
         )
+        groq_cynicism_confidence_threshold = _parse_bounded_int(
+            values.get("GROQ_CYNICISM_CONFIDENCE_THRESHOLD", "80"),
+            "GROQ_CYNICISM_CONFIDENCE_THRESHOLD",
+            0,
+            100,
+        )
         groq_timeout_seconds = _parse_positive_float(
             values.get("GROQ_TIMEOUT_SECONDS", "20"), "GROQ_TIMEOUT_SECONDS"
         )
@@ -165,6 +172,7 @@ class BotConfig:
             groq_text_model=groq_text_model,
             groq_speech_model=groq_speech_model,
             groq_confidence_threshold=groq_confidence_threshold,
+            groq_cynicism_confidence_threshold=groq_cynicism_confidence_threshold,
             groq_timeout_seconds=groq_timeout_seconds,
             voice_chunk_seconds=voice_chunk_seconds,
             context_message_count=context_message_count,

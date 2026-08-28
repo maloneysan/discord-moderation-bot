@@ -10,11 +10,14 @@ RULES_PATH = Path(__file__).resolve().parent.parent / "config" / "rules.json"
 
 
 class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
-    def make_service(self, threshold: int = 50) -> GroqModerationService:
+    def make_service(
+        self, threshold: int = 50, cynicism_threshold: int = 80
+    ) -> GroqModerationService:
         return GroqModerationService(
             "not-a-real-key",
             ModerationEngine.from_json(RULES_PATH),
             confidence_threshold=threshold,
+            cynicism_confidence_threshold=cynicism_threshold,
         )
 
     async def test_contextual_discrimination_and_cynicism_are_combined(self) -> None:
@@ -80,7 +83,7 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.detected)
         self.assertEqual(service._failed_requests, 1)
 
-    async def test_confidence_threshold_is_enforced(self) -> None:
+    async def test_category_specific_cynicism_threshold_is_enforced(self) -> None:
         service = self.make_service(threshold=60)
         result = service._result_from_payload(
             {
@@ -91,7 +94,7 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
                 },
                 "cynicism": {
                     "detected": True,
-                    "confidence": 60,
+                    "confidence": 79,
                     "reason": "相手への嘲笑です。",
                 },
                 "sexual_content": {"detected": False, "confidence": 1, "reason": ""},
@@ -99,7 +102,40 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
                 "drug_content": {"detected": False, "confidence": 1, "reason": ""},
             }
         )
+        self.assertFalse(result.detected)
+
+        result = service._result_from_payload(
+            {
+                "discrimination": {"detected": False, "confidence": 1, "reason": ""},
+                "cynicism": {
+                    "detected": True,
+                    "confidence": 80,
+                    "reason": "相手への明確な嘲笑です。",
+                },
+                "sexual_content": {"detected": False, "confidence": 1, "reason": ""},
+                "sensitive_term": {"detected": False, "confidence": 1, "reason": ""},
+                "drug_content": {"detected": False, "confidence": 1, "reason": ""},
+            }
+        )
         self.assertEqual({item.category for item in result.detections}, {"cynicism"})
+
+    def test_global_threshold_can_be_stricter_than_cynicism_threshold(self) -> None:
+        service = self.make_service(threshold=90, cynicism_threshold=80)
+        result = service._result_from_payload(
+            {
+                "discrimination": {"detected": False, "confidence": 1, "reason": ""},
+                "cynicism": {
+                    "detected": True,
+                    "confidence": 89,
+                    "reason": "相手への嘲笑です。",
+                },
+                "sexual_content": {"detected": False, "confidence": 1, "reason": ""},
+                "sensitive_term": {"detected": False, "confidence": 1, "reason": ""},
+                "drug_content": {"detected": False, "confidence": 1, "reason": ""},
+            }
+        )
+
+        self.assertFalse(result.detected)
 
     async def test_audio_transcript_is_returned_but_not_retained(self) -> None:
         service = self.make_service()
@@ -164,6 +200,8 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
             "OD缶",
             "without quoting",
             "recent_messages",
+            "identifiable person or group target",
+            "friendly banter",
         ):
             self.assertIn(phrase, prompt)
 

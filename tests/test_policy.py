@@ -93,7 +93,8 @@ class MessagePolicyTests(unittest.TestCase):
         self.assertNotIn("外国人は出ていけ", alert)
         self.assertIn("差別表現・冷笑", alert)
         self.assertIn("発言者：＠everyone '話者'", alert)
-        self.assertIn("問題点：", alert)
+        self.assertIn("問題だった点：", alert)
+        self.assertIn("・差別表現：", alert)
         self.assertIn("属性を理由に排除", alert)
 
     def test_dedicated_alert_includes_only_supplied_jump_url(self) -> None:
@@ -133,7 +134,8 @@ class MessagePolicyTests(unittest.TestCase):
         )
         self.assertIn("VC", alert)
         self.assertIn("発言者：VC話者", alert)
-        self.assertIn("問題点：差別表現", alert)
+        self.assertIn("問題だった点：", alert)
+        self.assertIn("・差別表現：", alert)
         self.assertNotIn("@", alert)
         self.assertNotIn("外国人は出ていけ", alert)
 

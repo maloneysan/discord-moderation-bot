@@ -28,6 +28,32 @@ _LOCAL_REASONS = {
     "drug_content": "違法薬物や薬物乱用に関連する内容です。",
 }
 
+_LOCAL_RULE_REASONS = {
+    "discrimination.explicit_slur": "属性や障害などを蔑称で呼び、相手の尊厳を傷つけています。",
+    "discrimination.exclusion_or_inferiority": "属性や立場を理由に、能力を低く扱ったり排除を求めています。",
+    "discrimination.harmful_stereotype": "集団全体を否定的な固定観念で決めつけています。",
+    "discrimination.dehumanization": "人を害虫や汚物などに例え、人間としての尊厳を否定しています。",
+    "discrimination.rights_denial": "属性や立場を理由に、権利や参加機会を奪うことを求めています。",
+    "discrimination.gender_role_denial": "性別役割を押し付け、相手の能力や行動を否定しています。",
+    "discrimination.ableist_denial": "障害や疾病を甘え・怠けと決めつけ、本人の困難を否定しています。",
+    "discrimination.identity_pathologizing": "性自認や性的指向を病気・異常として扱っています。",
+    "cynicism.gendered_mockery": "性別規範を使って、相手を弱い・情けないと辱めています。",
+    "cynicism.ridicule": "相手の能力や言動を低く扱い、笑いものにしています。",
+    "cynicism.implicit_target": "相手の理解力や反応を見下し、恥をかかせる言い方です。",
+    "cynicism.mocking_reaction": "相手の言動に対する嫌悪や嘲笑を、誇張した反応で示しています。",
+    "cynicism.patronizing": "相手を子ども扱いするような褒め方で見下しています。",
+    "cynicism.dismissive": "相手の意見や努力を取り合わず、突き放しています。",
+}
+
+_COMMUNITY_CYNICISM_RULES = frozenset(
+    {
+        "cynicism.uo_reaction",
+        "cynicism.dowa_reaction",
+        "cynicism.meu_ending",
+        "cynicism.kuiya_reaction",
+    }
+)
+
 
 class RuleConfigurationError(ValueError):
     """Raised when the moderation rule file is invalid."""
@@ -182,7 +208,7 @@ class ModerationEngine:
                         label=label,
                         score=score,
                         rule_ids=tuple(matched_ids[category]),
-                        reason=_LOCAL_REASONS[category],
+                        reason=_local_reason(category, matched_ids[category]),
                     )
                 )
 
@@ -197,3 +223,13 @@ class ModerationEngine:
     @staticmethod
     def _matches_any(patterns: Iterable[Pattern[str]], candidates: Sequence[str]) -> bool:
         return any(pattern.search(candidate) for pattern in patterns for candidate in candidates)
+
+
+def _local_reason(category: str, rule_ids: Sequence[str]) -> str:
+    for rule_id in rule_ids:
+        detailed = _LOCAL_RULE_REASONS.get(rule_id)
+        if detailed:
+            return detailed
+    if category == "cynicism" and _COMMUNITY_CYNICISM_RULES.intersection(rule_ids):
+        return "サーバーで冷笑として指定された反応・語尾が含まれています。"
+    return _LOCAL_REASONS[category]

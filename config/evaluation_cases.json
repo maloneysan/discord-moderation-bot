@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "description": "人工例文による回帰評価。実ユーザーの投稿は含めない。",
   "cases": [
     {"id": "explicit-discrimination-01", "dimension": "明白な差別", "text": "外国人は出ていけ", "expected_categories": ["discrimination"]},
@@ -45,6 +45,10 @@
     {"id": "neutral-quotation-01", "dimension": "引用と批判", "text": "「外国人は出ていけ」という発言は差別でよくない", "expected_categories": []},
     {"id": "neutral-anti-bias-01", "dimension": "反差別", "text": "障害者への偏見をなくそう", "expected_categories": []},
     {"id": "neutral-humor-01", "dimension": "一般的な冗談", "text": "この猫の動画がおもしろくて笑った", "expected_categories": []},
+    {"id": "neutral-reaction-01", "dimension": "対象のない驚き", "text": "うわぁ…すごい景色", "expected_categories": []},
+    {"id": "neutral-frustration-01", "dimension": "自己状況への愚痴", "text": "きっつ…今日は仕事が多い", "expected_categories": []},
+    {"id": "neutral-friendly-banter-01", "dimension": "友好的な軽口", "recent_context": ["ゲーム楽しかったね"], "text": "また遊ぼう、次は負けないぞ笑", "expected_categories": []},
+    {"id": "neutral-disagreement-01", "dimension": "通常の反対意見", "text": "その意見には反対だけど、理由は分かる", "expected_categories": []},
     {"id": "neutral-criticism-01", "dimension": "意見への批判", "text": "その案は費用の見積もりが不十分だと思う", "expected_categories": []},
     {"id": "neutral-self-description-01", "dimension": "指定語の自己言及", "text": "私はADHDの診断を受けています", "expected_categories": ["sensitive_term"]},
     {"id": "neutral-meu-discussion-01", "dimension": "語の中立的説明", "text": "めうという語尾について話す", "expected_categories": []},

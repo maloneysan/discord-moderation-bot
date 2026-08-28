@@ -49,7 +49,7 @@ def build_alert_text(
         "⚠️ モデレーション対象表現の可能性を検知しました"
         f"（種別：{category_text}）\n"
         f"発言者：{_safe_inline(author_name, '不明なユーザー', 80)}\n"
-        f"問題点：{_problem_summary(detections)}\n"
+        f"問題だった点：\n{_problem_summary(detections)}\n"
         "互いを尊重した表現に言い換えてください。"
     )
     if jump_url:
@@ -67,7 +67,7 @@ def build_voice_alert_text(
         "⚠️ VCでモデレーション対象表現の可能性を検知しました"
         f"（種別：{category_text}）\n"
         f"発言者：{_safe_inline(speaker_name, '不明なユーザー', 80)}\n"
-        f"問題点：{_problem_summary(detections)}\n"
+        f"問題だった点：\n{_problem_summary(detections)}\n"
         "互いを尊重した発言を心がけてください。"
     )
 
@@ -83,8 +83,8 @@ def _problem_summary(detections: Sequence[CategoryDetection]) -> str:
             "drug_content": "違法薬物や薬物乱用に関連する内容です。",
         }.get(item.category, "モデレーション対象となる内容です。")
         reason = _safe_inline(item.reason, fallback, 160)
-        parts.append(f"{item.label} — {reason}")
-    return " / ".join(parts)
+        parts.append(f"・{item.label}：{reason}")
+    return "\n".join(parts)
 
 
 def _safe_inline(value: str, fallback: str, limit: int) -> str:
