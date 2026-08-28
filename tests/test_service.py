@@ -179,6 +179,25 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service._post_audio.await_count, 1)
         self.assertEqual(service._quota_skipped_audio_requests, 1)
 
+    async def test_flagged_local_speech_fallback_is_also_verified(self) -> None:
+        fallback = AsyncMock()
+        fallback.transcribe_wav.return_value = "うお"
+        service = GroqModerationService(
+            "not-a-real-key",
+            ModerationEngine.from_json(RULES_PATH),
+            audio_interval_seconds=60,
+            local_speech_transcriber=fallback,
+        )
+        service._post_audio = AsyncMock(
+            side_effect=[{"text": "通常の会話"}, {"text": "一件目"}]
+        )
+
+        await service.transcribe_wav(b"RIFF-one")
+        transcript = await service.transcribe_wav(b"RIFF-two")
+
+        self.assertEqual(transcript, "")
+        self.assertEqual(service._unverified_audio_segments, 1)
+
     async def test_category_specific_cynicism_threshold_is_enforced(self) -> None:
         service = self.make_service(threshold=60)
         result = service._result_from_payload(
@@ -242,6 +261,45 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transcript, "音声の認識結果")
         self.assertNotIn("音声の認識結果", repr(service.__dict__))
 
+    async def test_flagged_voice_transcript_requires_independent_agreement(self) -> None:
+        service = self.make_service()
+        service._post_audio = AsyncMock(
+            side_effect=[{"text": "うお"}, {"text": "今日は"}]
+        )
+
+        transcript = await service.transcribe_wav(b"RIFF-test")
+
+        self.assertEqual(transcript, "")
+        self.assertEqual(service._unverified_audio_segments, 1)
+        self.assertEqual(service._post_audio.await_count, 2)
+
+    async def test_flagged_voice_transcript_is_kept_after_exact_agreement(self) -> None:
+        service = self.make_service()
+        service._post_audio = AsyncMock(
+            side_effect=[{"text": "うお。"}, {"text": "うお"}]
+        )
+
+        transcript = await service.transcribe_wav(b"RIFF-test")
+
+        self.assertEqual(transcript, "うお。")
+        self.assertEqual(service._post_audio.await_count, 2)
+
+    async def test_voice_text_without_local_rule_reaches_contextual_ai(self) -> None:
+        service = self.make_service()
+        service._post_chat = AsyncMock(
+            return_value={
+                "discrimination": {"detected": False, "confidence": 1, "reason": ""},
+                "cynicism": {"detected": False, "confidence": 1, "reason": ""},
+                "sexual_content": {"detected": False, "confidence": 1, "reason": ""},
+                "sensitive_term": {"detected": False, "confidence": 1, "reason": ""},
+                "drug_content": {"detected": False, "confidence": 1, "reason": ""},
+            }
+        )
+
+        await service.analyze("今日はいい天気ですね", request_source="voice")
+
+        service._post_chat.assert_awaited_once()
+
     async def test_recent_messages_are_forwarded_as_bounded_context(self) -> None:
         service = self.make_service()
         service._post_chat = AsyncMock(
@@ -303,10 +361,12 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertIn(phrase, prompt)
 
-    def test_speech_prompt_preserves_short_moderation_vocabulary(self) -> None:
+    def test_speech_prompt_does_not_bias_recognition_toward_watched_terms(self) -> None:
         prompt = GroqModerationService._SPEECH_PROMPT
-        for phrase in ("短い発言", "俗語", "薬物名", "うお", "ADHD"):
-            self.assertIn(phrase, prompt)
+        self.assertIn("実際に聞こえた内容だけ", prompt)
+        self.assertIn("推測で語を補わず", prompt)
+        for phrase in ("うお", "どわー", "クイヤ", "めう", "ADHD"):
+            self.assertNotIn(phrase, prompt)
 
 
 if __name__ == "__main__":

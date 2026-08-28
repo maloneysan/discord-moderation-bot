@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from difflib import SequenceMatcher
 import json
 import logging
+import re
 import time
 from typing import Any, Dict, Mapping, Optional, Protocol, Sequence
 
@@ -59,10 +61,12 @@ class GroqModerationService:
     """Contextual text moderation and speech recognition through GroqCloud."""
 
     _SPEECH_PROMPT = (
-        "日本語のDiscord会話です。短い発言、俗語、隠語、侮辱語、差別語、"
-        "性的表現、薬物名、英字略称、うお、どわー、クイヤ、めう、ADHDを"
-        "言い換えず、聞こえた発音どおり正確に文字起こししてください。"
+        "日本語のDiscord会話を、実際に聞こえた内容だけ忠実に文字起こしして"
+        "ください。推測で語を補わず、無音・雑音・不明瞭な音声は空文字として"
+        "扱ってください。俗語や固有名詞も、明瞭に聞こえた場合だけそのまま"
+        "記録してください。"
     )
+    _TRANSCRIPT_PUNCTUATION = re.compile(r"[^0-9a-zぁ-んァ-ヶ一-龠々ー]+")
 
     _SCHEMA: Mapping[str, Any] = {
         "type": "object",
@@ -207,6 +211,7 @@ required JSON schema and never repeat or transform the source text."""
         text_model: str = "openai/gpt-oss-120b",
         fallback_text_model: str = "openai/gpt-oss-20b",
         speech_model: str = "whisper-large-v3",
+        verification_speech_model: str = "whisper-large-v3-turbo",
         confidence_threshold: int = 50,
         cynicism_confidence_threshold: int = 80,
         timeout_seconds: float = 20.0,
@@ -231,6 +236,7 @@ required JSON schema and never repeat or transform the source text."""
         self._text_model = text_model
         self._fallback_text_model = fallback_text_model
         self._speech_model = speech_model
+        self._verification_speech_model = verification_speech_model
         self._threshold = confidence_threshold
         self._cynicism_threshold = cynicism_confidence_threshold
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
@@ -260,6 +266,7 @@ required JSON schema and never repeat or transform the source text."""
         self._text_fallbacks = 0
         self._rate_limit_failures = 0
         self._rejected_audio_segments = 0
+        self._unverified_audio_segments = 0
         self._quota_skipped_text_requests = 0
         self._quota_skipped_audio_requests = 0
         self._local_audio_fallbacks = 0
@@ -283,7 +290,8 @@ required JSON schema and never repeat or transform the source text."""
             f"混雑回避: テキスト{self._quota_skipped_text_requests}件/音声{self._quota_skipped_audio_requests}件、"
             f"20B退避: {self._fallback_model_requests}件、"
             f"ローカル音声: {self._local_audio_fallbacks}件、"
-            f"低品質音声除外: {self._rejected_audio_segments}件{fallback}"
+            f"低品質音声除外: {self._rejected_audio_segments}件、"
+            f"再照合不一致: {self._unverified_audio_segments}件{fallback}"
         )
 
     @property
@@ -305,7 +313,11 @@ required JSON schema and never repeat or transform the source text."""
         local_result = self._local_engine.analyze(text)
         if local_result.detected:
             return local_result
-        if not reply_context and not self._local_engine.has_moderation_signal(text):
+        if (
+            request_source != "voice"
+            and not reply_context
+            and not self._local_engine.has_moderation_signal(text)
+        ):
             return local_result
         if not await self._reserve_moderation_slot(request_source):
             self._text_fallbacks += 1
@@ -331,7 +343,8 @@ required JSON schema and never repeat or transform the source text."""
             return ""
         if not await self._reserve_audio_slot():
             self._quota_skipped_audio_requests += 1
-            return await self._local_transcribe(wav_audio)
+            transcript = await self._local_transcribe(wav_audio)
+            return await self._verify_voice_candidate(wav_audio, transcript)
         try:
             payload = await self._post_audio(wav_audio)
             self._successful_audio_requests += 1
@@ -339,15 +352,16 @@ required JSON schema and never repeat or transform the source text."""
             transcript = self._trusted_transcript(payload)
             if not transcript:
                 self._rejected_audio_segments += 1
-                return await self._local_transcribe(wav_audio)
-            return transcript
+                transcript = await self._local_transcribe(wav_audio)
+            return await self._verify_voice_candidate(wav_audio, transcript)
         except Exception as exc:
             self._record_failure(exc, request_type="audio")
             LOGGER.warning(
                 "External speech recognition failed; audio chunk discarded (error=%s)",
                 type(exc).__name__,
             )
-            return await self._local_transcribe(wav_audio)
+            transcript = await self._local_transcribe(wav_audio)
+            return await self._verify_voice_candidate(wav_audio, transcript)
 
     async def _post_chat(
         self,
@@ -424,14 +438,22 @@ required JSON schema and never repeat or transform the source text."""
             raise ValueError("moderation response is not an object")
         return parsed
 
-    async def _post_audio(self, wav_audio: bytes) -> Mapping[str, Any]:
+    async def _post_audio(
+        self,
+        wav_audio: bytes,
+        *,
+        model: Optional[str] = None,
+        prompt: Optional[str] = None,
+    ) -> Mapping[str, Any]:
         for attempt in range(2):
             form = aiohttp.FormData()
-            form.add_field("model", self._speech_model)
+            form.add_field("model", model or self._speech_model)
             form.add_field("response_format", "verbose_json")
             form.add_field("temperature", "0")
             form.add_field("language", "ja")
-            form.add_field("prompt", self._SPEECH_PROMPT)
+            selected_prompt = self._SPEECH_PROMPT if prompt is None else prompt
+            if selected_prompt:
+                form.add_field("prompt", selected_prompt)
             form.add_field(
                 "file",
                 wav_audio,
@@ -464,14 +486,67 @@ required JSON schema and never repeat or transform the source text."""
                 text = segment.get("text")
                 if not isinstance(text, str) or not text.strip():
                     continue
-                if isinstance(avg_logprob, (int, float)) and avg_logprob < -1.0:
+                if isinstance(avg_logprob, (int, float)) and avg_logprob < -0.8:
                     continue
-                if isinstance(no_speech_prob, (int, float)) and no_speech_prob > 0.8:
+                if isinstance(no_speech_prob, (int, float)) and no_speech_prob > 0.6:
                     continue
                 trusted.append(text.strip())
             return " ".join(trusted).strip()
         text = payload.get("text", "")
         return text.strip() if isinstance(text, str) else ""
+
+    async def _verify_voice_candidate(self, wav_audio: bytes, transcript: str) -> str:
+        """Double-check transcripts that would immediately accuse a speaker."""
+        if not transcript:
+            return ""
+        first_result = self._local_engine.analyze(transcript)
+        if not first_result.detected:
+            return transcript
+        try:
+            payload = await self._post_audio(
+                wav_audio,
+                model=self._verification_speech_model,
+                prompt="",
+            )
+            second = self._trusted_transcript(payload)
+        except Exception as exc:
+            self._record_failure(exc, request_type="audio")
+            second = ""
+        if not second or not self._transcripts_agree(transcript, second):
+            self._unverified_audio_segments += 1
+            LOGGER.info("Flagged voice transcript discarded after independent mismatch")
+            return ""
+        second_result = self._local_engine.analyze(second)
+        first_rule_ids = {
+            rule_id
+            for detection in first_result.detections
+            for rule_id in detection.rule_ids
+        }
+        second_rule_ids = {
+            rule_id
+            for detection in second_result.detections
+            for rule_id in detection.rule_ids
+        }
+        if not first_rule_ids.intersection(second_rule_ids):
+            self._unverified_audio_segments += 1
+            LOGGER.info("Flagged voice transcript discarded after rule mismatch")
+            return ""
+        return transcript
+
+    @classmethod
+    def _transcripts_agree(cls, first: str, second: str) -> bool:
+        first_normalized = cls._TRANSCRIPT_PUNCTUATION.sub("", first.casefold())
+        second_normalized = cls._TRANSCRIPT_PUNCTUATION.sub("", second.casefold())
+        if not first_normalized or not second_normalized:
+            return False
+        if max(len(first_normalized), len(second_normalized)) <= 6:
+            return first_normalized == second_normalized
+        shorter, longer = sorted(
+            (first_normalized, second_normalized), key=len
+        )
+        if shorter in longer and len(shorter) / len(longer) >= 0.65:
+            return True
+        return SequenceMatcher(None, first_normalized, second_normalized).ratio() >= 0.72
 
     def _record_failure(self, exc: Exception, *, request_type: str) -> None:
         self._failed_requests += 1
