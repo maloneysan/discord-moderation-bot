@@ -47,7 +47,9 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
             {item.category for item in result.detections},
             {"discrimination", "cynicism"},
         )
-        service._post_chat.assert_awaited_once_with("婉曲な表現", "会話の文脈", ())
+        service._post_chat.assert_awaited_once_with(
+            "婉曲な表現", "会話の文脈", (), request_source="text"
+        )
         self.assertNotIn("婉曲な表現", repr(result))
         self.assertIn("排除", result.detections[0].reason)
 
@@ -143,6 +145,58 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls[0].kwargs["json_body"]["model"], "openai/gpt-oss-120b")
         self.assertEqual(calls[1].kwargs["json_body"]["model"], "openai/gpt-oss-20b")
         self.assertEqual(service._fallback_model_requests, 1)
+
+    async def test_voice_uses_dedicated_safeguard_model_and_compact_policy(self) -> None:
+        service = self.make_service()
+        service._request_json = AsyncMock(
+            return_value={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "discrimination": {
+                                        "detected": False,
+                                        "confidence": 1,
+                                        "reason": "",
+                                    },
+                                    "cynicism": {
+                                        "detected": False,
+                                        "confidence": 1,
+                                        "reason": "",
+                                    },
+                                    "sexual_content": {
+                                        "detected": False,
+                                        "confidence": 1,
+                                        "reason": "",
+                                    },
+                                    "sensitive_term": {
+                                        "detected": False,
+                                        "confidence": 1,
+                                        "reason": "",
+                                    },
+                                    "drug_content": {
+                                        "detected": False,
+                                        "confidence": 1,
+                                        "reason": "",
+                                    },
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+
+        await service._post_chat(
+            "音声文字起こし", None, (), request_source="voice"
+        )
+
+        body = service._request_json.await_args.kwargs["json_body"]
+        self.assertEqual(body["model"], "openai/gpt-oss-safeguard-20b")
+        self.assertEqual(
+            body["messages"][0]["content"], service._VOICE_SYSTEM_PROMPT
+        )
 
     async def test_audio_api_failure_uses_local_speech_fallback(self) -> None:
         fallback = AsyncMock()
@@ -317,7 +371,10 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         service._post_chat.assert_awaited_once_with(
-            "外国人について", None, ("一", "二", "三", "四")
+            "外国人について",
+            None,
+            ("一", "二", "三", "四"),
+            request_source="text",
         )
 
     def test_low_confidence_and_no_speech_segments_are_removed(self) -> None:

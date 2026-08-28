@@ -72,9 +72,12 @@ export MODERATION_BACKEND='groq'
 export GROQ_API_KEY='GroqのAPIキー'
 export GROQ_TEXT_MODEL='openai/gpt-oss-120b'
 export GROQ_FALLBACK_TEXT_MODEL='openai/gpt-oss-20b'
+export GROQ_VOICE_TEXT_MODEL='openai/gpt-oss-safeguard-20b'
 export GROQ_SPEECH_MODEL='whisper-large-v3'
 export GROQ_CONFIDENCE_THRESHOLD='50'
 export GROQ_CYNICISM_CONFIDENCE_THRESHOLD='80'
+export GROQ_VOICE_ANALYSIS_INTERVAL_SECONDS='5'
+export GROQ_VOICE_DAILY_REQUEST_LIMIT='300'
 export CONTEXT_MESSAGE_COUNT='3'
 export CONTEXT_TTL_SECONDS='180'
 ```
@@ -102,7 +105,7 @@ export VOICE_MIN_UTTERANCE_MS='180'
 
 BotはVC参加時、VC内テキストまたは通知先へ音声認識中であることと非保存方針を案内します。発話は最大10秒、Discordの発話終了イベント、または音声後の無音検出時に送信します。RMS閾値は80、最短発話は180msです。Whisper Large V3へ日本語を明示しますが、誤った単語補完を避けるため監視語そのものは認識ヒントへ含めません。`verbose_json`のうち`avg_logprob < -0.8`または`no_speech_prob > 0.6`を低品質として除外します。ローカル強ルールに該当する文字起こしは、語彙ヒントなしのWhisper Large V3 Turboでもう一度認識し、文字列とルールが一致した場合だけ通知します。[Groq公式の音声品質メタデータ解説](https://console.groq.com/docs/speech-to-text)
 
-無料枠を通常会話で使い切らないよう、テキストチャットは端末内ルールで一次判定します。VC文字起こしは登録語がなくてもGPT-OSSの文脈判定候補にするため、複雑な言い回しも扱えます。明白なローカル違反はその場で通知し、外部テキスト判定は4秒間隔、うちVC由来は45秒間隔、1日あたりテキスト70件・VC30件を上限にします。上限中はローカル判定のみです。429時はGroqの待機時間（取得できない場合60秒）だけ外部判定を休止し、再試行の連打や処理待ちの蓄積を防ぎます。
+無料枠を通常会話で使い切らないよう、テキストチャットは端末内ルールで一次判定します。VC文字起こしは登録語がなくても専用の`openai/gpt-oss-safeguard-20b`へ送り、複雑な言い回しも扱います。明白なローカル違反はその場で通知し、外部判定は全体4秒間隔、VC由来は5秒間隔、1日あたりテキスト70件・VC300件をBot側上限にします。VCモデルを通常テキスト用120B/20Bから分離するため、互いのモデル別無料枠を奪いません。上限中はローカル判定のみです。429時はGroqの待機時間（取得できない場合60秒）だけ外部判定を休止します。
 
 `/vc_status`では認識済みチャンク、無音・低品質除外、最終認識時刻、直近エラーを確認できます。運用ログには文字起こし本文を残さず、チャンクが認識・判定まで到達したかだけを記録します。
 

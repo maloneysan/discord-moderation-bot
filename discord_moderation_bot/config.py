@@ -26,10 +26,13 @@ class BotConfig:
     groq_api_key: Optional[str] = None
     groq_text_model: str = "openai/gpt-oss-120b"
     groq_fallback_text_model: str = "openai/gpt-oss-20b"
+    groq_voice_text_model: str = "openai/gpt-oss-safeguard-20b"
     groq_speech_model: str = "whisper-large-v3"
     groq_confidence_threshold: int = 50
     groq_cynicism_confidence_threshold: int = 80
     groq_timeout_seconds: float = 20.0
+    groq_voice_analysis_interval_seconds: float = 5.0
+    groq_voice_daily_request_limit: int = 300
     voice_chunk_seconds: int = 10
     context_message_count: int = 3
     context_ttl_seconds: int = 180
@@ -96,6 +99,12 @@ class BotConfig:
             values.get("GROQ_FALLBACK_TEXT_MODEL", "openai/gpt-oss-20b").strip()
             or "openai/gpt-oss-20b"
         )
+        groq_voice_text_model = (
+            values.get(
+                "GROQ_VOICE_TEXT_MODEL", "openai/gpt-oss-safeguard-20b"
+            ).strip()
+            or "openai/gpt-oss-safeguard-20b"
+        )
         groq_speech_model = (
             values.get("GROQ_SPEECH_MODEL", "whisper-large-v3").strip()
             or "whisper-large-v3"
@@ -114,6 +123,16 @@ class BotConfig:
         )
         groq_timeout_seconds = _parse_positive_float(
             values.get("GROQ_TIMEOUT_SECONDS", "20"), "GROQ_TIMEOUT_SECONDS"
+        )
+        groq_voice_analysis_interval_seconds = _parse_positive_float(
+            values.get("GROQ_VOICE_ANALYSIS_INTERVAL_SECONDS", "5"),
+            "GROQ_VOICE_ANALYSIS_INTERVAL_SECONDS",
+        )
+        groq_voice_daily_request_limit = _parse_bounded_int(
+            values.get("GROQ_VOICE_DAILY_REQUEST_LIMIT", "300"),
+            "GROQ_VOICE_DAILY_REQUEST_LIMIT",
+            1,
+            1000,
         )
         voice_chunk_seconds = _parse_bounded_int(
             values.get("VOICE_CHUNK_SECONDS", "10"),
@@ -176,10 +195,15 @@ class BotConfig:
             groq_api_key=groq_api_key,
             groq_text_model=groq_text_model,
             groq_fallback_text_model=groq_fallback_text_model,
+            groq_voice_text_model=groq_voice_text_model,
             groq_speech_model=groq_speech_model,
             groq_confidence_threshold=groq_confidence_threshold,
             groq_cynicism_confidence_threshold=groq_cynicism_confidence_threshold,
             groq_timeout_seconds=groq_timeout_seconds,
+            groq_voice_analysis_interval_seconds=(
+                groq_voice_analysis_interval_seconds
+            ),
+            groq_voice_daily_request_limit=groq_voice_daily_request_limit,
             voice_chunk_seconds=voice_chunk_seconds,
             context_message_count=context_message_count,
             context_ttl_seconds=context_ttl_seconds,

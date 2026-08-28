@@ -4,7 +4,7 @@
 
 複数の小規模Discordサーバーで、冷笑、差別、性的表現、サーバー指定要注意語、薬物関連に該当する可能性が高いテキスト・VC発言を検知し、処罰ではなく表現の見直しを促す。
 
-判定と音声認識はGroq Free Planを主系とする。テキストは`openai/gpt-oss-120b`、同モデルが429の間は`openai/gpt-oss-20b`、VC音声は`whisper-large-v3`を使用する。既知の強表現とAPI障害時はローカルJSONルールを安全網とし、音声API障害時は端末内の日本語Voskへ退避する。
+判定と音声認識はGroq Free Planを主系とする。テキストは`openai/gpt-oss-120b`、同モデルが429の間は`openai/gpt-oss-20b`、VC文脈判定は`openai/gpt-oss-safeguard-20b`、VC音声は`whisper-large-v3`を使用する。既知の強表現とAPI障害時はローカルJSONルールを安全網とし、音声API障害時は端末内の日本語Voskへ退避する。
 
 ## 2. 対象範囲
 
@@ -81,7 +81,7 @@ Botが参加していないVCの音声はDiscordから受信できないため�
 3. 外部LLMはプロンプト内の本文を命令でなく未信頼データとして扱い、現在メッセージだけを差別・冷笑・性的表現・要注意語・薬物関連へ独立分類する。過去文脈単独の判定を現在投稿へ引き継がない。
 4. Strict Structured Outputsで分類ごとの`detected`、信頼度0〜100、原文を引用せず、対象の種類と問題行為（能力への見下し、失敗の嘲笑、集団の排除など）を具体化した日本語1文の問題点要約を受け取る。
 5. `detected=true`かつ信頼度50以上を既定の成立条件とする。
-6. 外部判定は全体4秒間隔、VC由来45秒間隔、プロセス内の24時間窓でテキスト70件・VC30件までとする。429時は`Retry-After`、取得不能時は60秒の休止時間を置く。
+6. 外部判定は全体4秒間隔、VC由来5秒間隔、プロセス内の24時間窓でテキスト70件・VC300件までとする。VCは専用Safeguardモデルへ分離し、通常テキスト判定のモデル別無料枠を奪わない。429時は`Retry-After`、取得不能時は60秒の休止時間を置く。
 7. API失敗・上限到達・テキスト一次選別対象外ではローカル結果だけを使用する。VC音声APIが失敗・混雑・品質除外になった場合は、利用可能なら端末内Voskで同じ一時WAVを認識する。ただしVosk結果が強ルールに該当するときも、外部音声モデルとの再照合なしには通知しない。
 
 判定結果オブジェクトは検知有無、分類、点数、内部判定元ID、問題点要約だけを保持し、原文を保持しない。通知を組み立てる瞬間だけDiscordメッセージ本文またはVC文字起こしを参照し、改行を空白へ変換し、メンション・Markdown記号を無効化した最大240文字の該当発言を表示する。外部要約は改行除去、メンション文字の無効化、160文字上限を適用する。API障害時は分類別の定型要約を使用する。
@@ -129,10 +129,13 @@ VCではサーバー別の専用テキストチャンネルへ次の形式で送
 | `GROQ_API_KEY` | Groq時必須 | 環境変数またはmacOSキーチェーンからのみ取得 |
 | `GROQ_TEXT_MODEL` | 任意 | 初期値`openai/gpt-oss-120b` |
 | `GROQ_FALLBACK_TEXT_MODEL` | 任意 | 120Bが429の間に使う予備モデル。初期値`openai/gpt-oss-20b` |
+| `GROQ_VOICE_TEXT_MODEL` | 任意 | VC専用安全判定。初期値`openai/gpt-oss-safeguard-20b` |
 | `GROQ_SPEECH_MODEL` | 任意 | 初期値`whisper-large-v3` |
 | `GROQ_CONFIDENCE_THRESHOLD` | 任意 | 初期値50、0〜100 |
 | `GROQ_CYNICISM_CONFIDENCE_THRESHOLD` | 任意 | 冷笑だけの通知信頼度。初期値80、0〜100 |
 | `GROQ_TIMEOUT_SECONDS` | 任意 | 初期値20秒 |
+| `GROQ_VOICE_ANALYSIS_INTERVAL_SECONDS` | 任意 | VC外部判定の最短間隔。初期値5秒 |
+| `GROQ_VOICE_DAILY_REQUEST_LIMIT` | 任意 | 24時間窓のVC外部判定上限。初期値300件 |
 | `CONTEXT_MESSAGE_COUNT` | 任意 | 直前文脈の件数。初期値3、1〜5 |
 | `CONTEXT_TTL_SECONDS` | 任意 | 直前文脈のメモリ保持秒数。初期値180、30〜600 |
 | `VOICE_ENABLED` | 任意 | `true`でVC監視を有効化。初期値`false` |

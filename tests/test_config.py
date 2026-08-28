@@ -44,6 +44,11 @@ class BotConfigTests(unittest.TestCase):
         self.assertEqual(config.voice_min_rms, 80)
         self.assertEqual(config.voice_min_utterance_ms, 180)
         self.assertEqual(config.groq_cynicism_confidence_threshold, 80)
+        self.assertEqual(
+            config.groq_voice_text_model, "openai/gpt-oss-safeguard-20b"
+        )
+        self.assertEqual(config.groq_voice_analysis_interval_seconds, 5.0)
+        self.assertEqual(config.groq_voice_daily_request_limit, 300)
 
     def test_voice_configuration_is_parsed(self) -> None:
         config = BotConfig.from_env(
@@ -119,10 +124,13 @@ class BotConfigTests(unittest.TestCase):
                 "GROQ_API_KEY": "groq-secret",
                 "GROQ_TEXT_MODEL": "text-model",
                 "GROQ_FALLBACK_TEXT_MODEL": "fallback-text-model",
+                "GROQ_VOICE_TEXT_MODEL": "voice-text-model",
                 "GROQ_SPEECH_MODEL": "speech-model",
                 "GROQ_CONFIDENCE_THRESHOLD": "42",
                 "GROQ_CYNICISM_CONFIDENCE_THRESHOLD": "81",
                 "GROQ_TIMEOUT_SECONDS": "12.5",
+                "GROQ_VOICE_ANALYSIS_INTERVAL_SECONDS": "7.5",
+                "GROQ_VOICE_DAILY_REQUEST_LIMIT": "250",
                 "VOICE_CHUNK_SECONDS": "15",
                 "CONTEXT_MESSAGE_COUNT": "4",
                 "CONTEXT_TTL_SECONDS": "240",
@@ -132,10 +140,13 @@ class BotConfigTests(unittest.TestCase):
         )
         self.assertEqual(config.groq_text_model, "text-model")
         self.assertEqual(config.groq_fallback_text_model, "fallback-text-model")
+        self.assertEqual(config.groq_voice_text_model, "voice-text-model")
         self.assertEqual(config.groq_speech_model, "speech-model")
         self.assertEqual(config.groq_confidence_threshold, 42)
         self.assertEqual(config.groq_cynicism_confidence_threshold, 81)
         self.assertEqual(config.groq_timeout_seconds, 12.5)
+        self.assertEqual(config.groq_voice_analysis_interval_seconds, 7.5)
+        self.assertEqual(config.groq_voice_daily_request_limit, 250)
         self.assertEqual(config.voice_chunk_seconds, 15)
         self.assertEqual(config.context_message_count, 4)
         self.assertEqual(config.context_ttl_seconds, 240)

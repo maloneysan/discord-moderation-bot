@@ -37,12 +37,17 @@ def main() -> int:
             engine,
             text_model=config.groq_text_model,
             fallback_text_model=config.groq_fallback_text_model,
+            voice_text_model=config.groq_voice_text_model,
             speech_model=config.groq_speech_model,
             confidence_threshold=config.groq_confidence_threshold,
             cynicism_confidence_threshold=(
                 config.groq_cynicism_confidence_threshold
             ),
             timeout_seconds=config.groq_timeout_seconds,
+            voice_analysis_interval_seconds=(
+                config.groq_voice_analysis_interval_seconds
+            ),
+            voice_daily_request_limit=config.groq_voice_daily_request_limit,
             local_speech_transcriber=local_speech,
         )
     else:
