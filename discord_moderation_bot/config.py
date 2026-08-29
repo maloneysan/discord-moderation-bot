@@ -32,7 +32,6 @@ class BotConfig:
     groq_cynicism_confidence_threshold: int = 80
     groq_timeout_seconds: float = 20.0
     groq_voice_analysis_interval_seconds: float = 5.0
-    groq_voice_daily_request_limit: int = 300
     voice_chunk_seconds: int = 10
     context_message_count: int = 3
     context_ttl_seconds: int = 180
@@ -128,12 +127,6 @@ class BotConfig:
             values.get("GROQ_VOICE_ANALYSIS_INTERVAL_SECONDS", "5"),
             "GROQ_VOICE_ANALYSIS_INTERVAL_SECONDS",
         )
-        groq_voice_daily_request_limit = _parse_bounded_int(
-            values.get("GROQ_VOICE_DAILY_REQUEST_LIMIT", "300"),
-            "GROQ_VOICE_DAILY_REQUEST_LIMIT",
-            1,
-            1000,
-        )
         voice_chunk_seconds = _parse_bounded_int(
             values.get("VOICE_CHUNK_SECONDS", "10"),
             "VOICE_CHUNK_SECONDS",
@@ -203,7 +196,6 @@ class BotConfig:
             groq_voice_analysis_interval_seconds=(
                 groq_voice_analysis_interval_seconds
             ),
-            groq_voice_daily_request_limit=groq_voice_daily_request_limit,
             voice_chunk_seconds=voice_chunk_seconds,
             context_message_count=context_message_count,
             context_ttl_seconds=context_ttl_seconds,

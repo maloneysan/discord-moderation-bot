@@ -47,7 +47,6 @@ def main() -> int:
             voice_analysis_interval_seconds=(
                 config.groq_voice_analysis_interval_seconds
             ),
-            voice_daily_request_limit=config.groq_voice_daily_request_limit,
             local_speech_transcriber=local_speech,
         )
     else:

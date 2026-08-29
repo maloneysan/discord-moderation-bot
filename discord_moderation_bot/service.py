@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections import deque
 from difflib import SequenceMatcher
 import json
 import logging
@@ -242,8 +241,6 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
         text_interval_seconds: float = 4.0,
         voice_analysis_interval_seconds: float = 5.0,
         audio_interval_seconds: float = 4.0,
-        text_daily_request_limit: int = 70,
-        voice_daily_request_limit: int = 300,
         local_speech_transcriber: Optional[object] = None,
     ) -> None:
         if not api_key:
@@ -272,10 +269,6 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
             self._text_interval_seconds, voice_analysis_interval_seconds
         )
         self._audio_interval_seconds = max(0.0, audio_interval_seconds)
-        self._text_daily_request_limit = max(1, text_daily_request_limit)
-        self._voice_daily_request_limit = max(1, voice_daily_request_limit)
-        self._text_request_times = deque()
-        self._voice_request_times = deque()
         self._next_text_request_at = 0.0
         self._next_voice_analysis_at = 0.0
         self._next_audio_request_at = 0.0
@@ -653,24 +646,8 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
                 return False
             if current < self._next_text_request_at:
                 return False
-            request_times = (
-                self._voice_request_times
-                if request_source == "voice"
-                else self._text_request_times
-            )
-            daily_limit = (
-                self._voice_daily_request_limit
-                if request_source == "voice"
-                else self._text_daily_request_limit
-            )
-            cutoff = current - 86_400
-            while request_times and request_times[0] < cutoff:
-                request_times.popleft()
-            if len(request_times) >= daily_limit:
-                return False
             if request_source == "voice" and current < self._next_voice_analysis_at:
                 return False
-            request_times.append(current)
             self._next_text_request_at = current + self._text_interval_seconds
             if request_source == "voice":
                 self._next_voice_analysis_at = (

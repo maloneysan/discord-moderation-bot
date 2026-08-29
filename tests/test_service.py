@@ -138,6 +138,32 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service._post_chat.await_count, 1)
         self.assertEqual(service._quota_skipped_text_requests, 1)
 
+    async def test_no_internal_daily_cap_for_text_or_voice_ai(self) -> None:
+        service = GroqModerationService(
+            "not-a-real-key",
+            ModerationEngine.from_json(RULES_PATH),
+            text_interval_seconds=0,
+            voice_analysis_interval_seconds=0,
+        )
+        service._post_chat = AsyncMock(
+            return_value={
+                "discrimination": {"detected": False, "confidence": 1, "reason": ""},
+                "cynicism": {"detected": False, "confidence": 1, "reason": ""},
+                "sexual_content": {"detected": False, "confidence": 1, "reason": ""},
+                "sensitive_term": {"detected": False, "confidence": 1, "reason": ""},
+                "drug_content": {"detected": False, "confidence": 1, "reason": ""},
+            }
+        )
+
+        for index in range(71):
+            await service.analyze(f"外国人についての確認{index}")
+        for index in range(301):
+            await service.analyze(
+                f"通常のVC文字起こし{index}", request_source="voice"
+            )
+
+        self.assertEqual(service._post_chat.await_count, 372)
+
     async def test_ordinary_message_does_not_spend_remote_quota(self) -> None:
         service = self.make_service()
         service._post_chat = AsyncMock()
