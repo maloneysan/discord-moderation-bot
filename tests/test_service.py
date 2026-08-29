@@ -87,6 +87,35 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.detected)
         self.assertEqual(service._failed_requests, 1)
 
+    async def test_api_failure_uses_relaxed_compositional_local_detection(self) -> None:
+        service = self.make_service()
+        service._post_chat = AsyncMock(side_effect=RuntimeError("network"))
+
+        result = await service.analyze("お前の話はどうでもいい")
+
+        self.assertEqual({item.category for item in result.detections}, {"cynicism"})
+
+    async def test_quota_gate_uses_relaxed_compositional_local_detection(self) -> None:
+        service = GroqModerationService(
+            "not-a-real-key",
+            ModerationEngine.from_json(RULES_PATH),
+            text_interval_seconds=60,
+        )
+        service._post_chat = AsyncMock(
+            return_value={
+                "discrimination": {"detected": False, "confidence": 1, "reason": ""},
+                "cynicism": {"detected": False, "confidence": 1, "reason": ""},
+                "sexual_content": {"detected": False, "confidence": 1, "reason": ""},
+                "sensitive_term": {"detected": False, "confidence": 1, "reason": ""},
+                "drug_content": {"detected": False, "confidence": 1, "reason": ""},
+            }
+        )
+
+        await service.analyze("外国人についての一件目")
+        result = await service.analyze("お前の話はどうでもいい")
+
+        self.assertEqual({item.category for item in result.detections}, {"cynicism"})
+
     async def test_token_aware_gate_skips_excess_remote_requests(self) -> None:
         service = GroqModerationService(
             "not-a-real-key",
@@ -251,6 +280,39 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(transcript, "")
         self.assertEqual(service._unverified_audio_segments, 1)
+
+    async def test_compositional_vosk_hit_survives_verifier_api_limit(self) -> None:
+        fallback = AsyncMock()
+        fallback.transcribe_wav.return_value = "外国人は出ていけ"
+        service = GroqModerationService(
+            "not-a-real-key",
+            ModerationEngine.from_json(RULES_PATH),
+            audio_interval_seconds=60,
+            local_speech_transcriber=fallback,
+        )
+        service._next_audio_request_at = float("inf")
+        service._post_audio = AsyncMock(side_effect=RuntimeError("quota"))
+
+        transcript = await service.transcribe_wav(b"RIFF-test")
+
+        self.assertEqual(transcript, "外国人は出ていけ")
+        self.assertEqual(service._offline_verified_audio_segments, 1)
+
+    async def test_short_vosk_hit_is_suppressed_without_external_verification(self) -> None:
+        fallback = AsyncMock()
+        fallback.transcribe_wav.return_value = "うお"
+        service = GroqModerationService(
+            "not-a-real-key",
+            ModerationEngine.from_json(RULES_PATH),
+            audio_interval_seconds=60,
+            local_speech_transcriber=fallback,
+        )
+        service._next_audio_request_at = float("inf")
+        service._post_audio = AsyncMock(side_effect=RuntimeError("quota"))
+
+        transcript = await service.transcribe_wav(b"RIFF-test")
+
+        self.assertEqual(transcript, "")
 
     async def test_category_specific_cynicism_threshold_is_enforced(self) -> None:
         service = self.make_service(threshold=60)

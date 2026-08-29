@@ -21,6 +21,10 @@ class ModerationEngineTests(unittest.TestCase):
         result = self.engine.analyze(text)
         return {detection.category for detection in result.detections}
 
+    def fallback_categories_for(self, text: str):
+        result = self.engine.analyze_fallback(text)
+        return {detection.category for detection in result.detections}
+
     def test_explicit_slur_is_detected_after_obfuscation(self) -> None:
         result = self.engine.analyze("土\u200b人")
         self.assertTrue(result.detected)
@@ -141,6 +145,40 @@ class ModerationEngineTests(unittest.TestCase):
         for text in examples:
             with self.subTest(text=text):
                 self.assertEqual(self.categories_for(text), {"discrimination"})
+
+    def test_local_fallback_covers_periphrastic_discrimination(self) -> None:
+        examples = (
+            "あの国から来た連中を同じ席に座らせる必要はない",
+            "向こうの宗教の人とは関わりたくない",
+            "外国の人はみんなマナーが悪い",
+        )
+        for text in examples:
+            with self.subTest(text=text):
+                self.assertEqual(
+                    self.fallback_categories_for(text), {"discrimination"}
+                )
+
+    def test_local_fallback_covers_targeted_contempt(self) -> None:
+        examples = (
+            "お前の話はどうでもいい",
+            "あんたは本当にセンスない",
+            "失敗して笑われるとかざまあ",
+        )
+        for text in examples:
+            with self.subTest(text=text):
+                self.assertEqual(self.fallback_categories_for(text), {"cynicism"})
+
+    def test_local_fallback_still_ignores_neutral_or_ambiguous_phrases(self) -> None:
+        examples = (
+            "外国の人向けに同じ席を用意する",
+            "その案は私には向いてない",
+            "失敗から学ぶことが大切です",
+            "どうでもいい雑談をしよう",
+            "草",
+        )
+        for text in examples:
+            with self.subTest(text=text):
+                self.assertFalse(self.engine.analyze_fallback(text).detected)
 
     def test_combined_message_returns_both_categories(self) -> None:
         self.assertEqual(

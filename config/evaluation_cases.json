@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "description": "人工例文による回帰評価。実ユーザーの投稿は含めない。",
   "cases": [
     {"id": "explicit-discrimination-01", "dimension": "明白な差別", "text": "外国人は出ていけ", "expected_categories": ["discrimination"]},
@@ -37,6 +37,10 @@
     {"id": "drug-content-context-01", "dimension": "薬物の隠語と勧誘", "recent_context": ["今夜の集まりに何か持ってくる？"], "text": "飛べるやつを用意できるよ", "expected_categories": ["drug_content"]},
     {"id": "context-discrimination-01", "dimension": "複数投稿文脈", "recent_context": ["難民を地域で受け入れる案についてどう思う？"], "text": "ああいう連中はここから締め出せばいい", "expected_categories": ["discrimination"]},
     {"id": "context-cynicism-01", "dimension": "複数投稿文脈", "recent_context": ["操作方法がまだ分からなくて困っています"], "text": "その程度も無理なんだ、さすがだね", "expected_categories": ["cynicism"]},
+    {"id": "local-fallback-discrimination-01", "dimension": "ローカル退避・婉曲な排除", "text": "あの国から来た連中を同じ席に座らせる必要はない", "expected_categories": ["discrimination"]},
+    {"id": "local-fallback-discrimination-02", "dimension": "ローカル退避・婉曲な固定観念", "text": "外国の人はみんなマナーが悪い", "expected_categories": ["discrimination"]},
+    {"id": "local-fallback-cynicism-01", "dimension": "ローカル退避・対象付き突き放し", "text": "お前の話はどうでもいい", "expected_categories": ["cynicism"]},
+    {"id": "local-fallback-cynicism-02", "dimension": "ローカル退避・失敗の嘲笑", "text": "失敗して笑われるとかざまあ", "expected_categories": ["cynicism"]},
     {"id": "neutral-laughter-01", "dimension": "正常な笑い", "text": "草", "expected_categories": []},
     {"id": "neutral-homonym-01", "dimension": "同音異義", "text": "うお座の星を観察した", "expected_categories": []},
     {"id": "neutral-homonym-02", "dimension": "固有名詞", "text": "ドワーフの冒険を始めよう", "expected_categories": []},
@@ -57,6 +61,9 @@
     {"id": "neutral-adhd-boundary-01", "dimension": "指定語の英字境界", "text": "ADHDersという英単語", "expected_categories": []},
     {"id": "neutral-medicine-01", "dimension": "通常の医療", "text": "病院で薬を処方された", "expected_categories": []},
     {"id": "neutral-drug-homonym-01", "dimension": "薬物略称の英字境界", "text": "OD缶を買う", "expected_categories": []},
-    {"id": "neutral-context-01", "dimension": "文脈非連鎖", "recent_context": ["外国人は出ていけ"], "text": "その言い方には反対です", "expected_categories": []}
+    {"id": "neutral-context-01", "dimension": "文脈非連鎖", "recent_context": ["外国人は出ていけ"], "text": "その言い方には反対です", "expected_categories": []},
+    {"id": "neutral-local-fallback-01", "dimension": "ローカル退避・中立的な受入", "text": "外国の人向けに同じ席を用意する", "expected_categories": []},
+    {"id": "neutral-local-fallback-02", "dimension": "ローカル退避・自己評価", "text": "その仕事は私には向いてない", "expected_categories": []},
+    {"id": "neutral-local-fallback-03", "dimension": "ローカル退避・学習の話", "text": "失敗から学ぶことが大切です", "expected_categories": []}
   ]
 }

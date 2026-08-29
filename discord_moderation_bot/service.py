@@ -11,7 +11,7 @@ from typing import Any, Dict, Mapping, Optional, Protocol, Sequence
 
 import aiohttp
 
-from .engine import ModerationEngine
+from .engine import ModerationEngine, normalize_text
 from .models import CategoryDetection, DetectionResult
 
 
@@ -48,7 +48,7 @@ class LocalModerationService:
         recent_context: Sequence[str] = (),
         request_source: str = "text",
     ) -> DetectionResult:
-        return self._engine.analyze(text)
+        return self._engine.analyze_fallback(text)
 
     async def transcribe_wav(self, wav_audio: bytes) -> str:
         raise RuntimeError("external speech recognition is not configured")
@@ -291,6 +291,7 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
         self._rate_limit_failures = 0
         self._rejected_audio_segments = 0
         self._unverified_audio_segments = 0
+        self._offline_verified_audio_segments = 0
         self._quota_skipped_text_requests = 0
         self._quota_skipped_audio_requests = 0
         self._local_audio_fallbacks = 0
@@ -311,11 +312,13 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
         return (
             f"成功: テキスト{self._successful_text_requests}件/音声{self._successful_audio_requests}件、"
             f"API失敗: {self._failed_requests}件、429: {self._rate_limit_failures}件、"
+            f"ローカル判定退避: {self._text_fallbacks}件、"
             f"混雑回避: テキスト{self._quota_skipped_text_requests}件/音声{self._quota_skipped_audio_requests}件、"
             f"20B退避: {self._fallback_model_requests}件、"
             f"ローカル音声: {self._local_audio_fallbacks}件、"
             f"低品質音声除外: {self._rejected_audio_segments}件、"
-            f"再照合不一致: {self._unverified_audio_segments}件{fallback}"
+            f"再照合不一致: {self._unverified_audio_segments}件、"
+            f"音声ローカル成立: {self._offline_verified_audio_segments}件{fallback}"
         )
 
     @property
@@ -346,7 +349,7 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
         if not await self._reserve_moderation_slot(request_source):
             self._text_fallbacks += 1
             self._quota_skipped_text_requests += 1
-            return local_result
+            return self._local_engine.analyze_fallback(text)
         try:
             payload = await self._post_chat(
                 text,
@@ -365,7 +368,7 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
                 "External text moderation failed; local fallback used (error=%s)",
                 type(exc).__name__,
             )
-            return local_result
+            return self._local_engine.analyze_fallback(text)
 
     async def transcribe_wav(self, wav_audio: bytes) -> str:
         if not wav_audio:
@@ -373,16 +376,22 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
         if not await self._reserve_audio_slot():
             self._quota_skipped_audio_requests += 1
             transcript = await self._local_transcribe(wav_audio)
-            return await self._verify_voice_candidate(wav_audio, transcript)
+            return await self._verify_voice_candidate(
+                wav_audio, transcript, local_source=True
+            )
         try:
             payload = await self._post_audio(wav_audio)
             self._successful_audio_requests += 1
             self._last_audio_success_at = time.monotonic()
             transcript = self._trusted_transcript(payload)
+            local_source = False
             if not transcript:
                 self._rejected_audio_segments += 1
                 transcript = await self._local_transcribe(wav_audio)
-            return await self._verify_voice_candidate(wav_audio, transcript)
+                local_source = True
+            return await self._verify_voice_candidate(
+                wav_audio, transcript, local_source=local_source
+            )
         except Exception as exc:
             self._record_failure(exc, request_type="audio")
             LOGGER.warning(
@@ -390,7 +399,9 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
                 type(exc).__name__,
             )
             transcript = await self._local_transcribe(wav_audio)
-            return await self._verify_voice_candidate(wav_audio, transcript)
+            return await self._verify_voice_candidate(
+                wav_audio, transcript, local_source=True
+            )
 
     async def _post_chat(
         self,
@@ -533,13 +544,20 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
         text = payload.get("text", "")
         return text.strip() if isinstance(text, str) else ""
 
-    async def _verify_voice_candidate(self, wav_audio: bytes, transcript: str) -> str:
+    async def _verify_voice_candidate(
+        self,
+        wav_audio: bytes,
+        transcript: str,
+        *,
+        local_source: bool = False,
+    ) -> str:
         """Double-check transcripts that would immediately accuse a speaker."""
         if not transcript:
             return ""
         first_result = self._local_engine.analyze(transcript)
         if not first_result.detected:
             return transcript
+        verification_failed = False
         try:
             payload = await self._post_audio(
                 wav_audio,
@@ -550,6 +568,15 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
         except Exception as exc:
             self._record_failure(exc, request_type="audio")
             second = ""
+            verification_failed = True
+        if (
+            verification_failed
+            and local_source
+            and self._safe_offline_voice_detection(transcript, first_result)
+        ):
+            self._offline_verified_audio_segments += 1
+            LOGGER.info("VC transcript accepted by compositional offline safety rules")
+            return transcript
         if not second or not self._transcripts_agree(transcript, second):
             self._unverified_audio_segments += 1
             LOGGER.info("Flagged voice transcript discarded after independent mismatch")
@@ -570,6 +597,21 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
             LOGGER.info("Flagged voice transcript discarded after rule mismatch")
             return ""
         return transcript
+
+    @staticmethod
+    def _safe_offline_voice_detection(
+        transcript: str, result: DetectionResult
+    ) -> bool:
+        """Allow only longer, compositional discrimination/cynicism offline hits."""
+        compact = re.sub(r"\W+", "", normalize_text(transcript))
+        if len(compact) < 6:
+            return False
+        for detection in result.detections:
+            if detection.category not in {"discrimination", "cynicism"}:
+                continue
+            if len(set(detection.rule_ids)) >= 2:
+                return True
+        return False
 
     @classmethod
     def _transcripts_agree(cls, first: str, second: str) -> bool:
