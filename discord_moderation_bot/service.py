@@ -238,9 +238,9 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
         cynicism_confidence_threshold: int = 80,
         timeout_seconds: float = 20.0,
         max_concurrency: int = 4,
-        text_interval_seconds: float = 4.0,
-        voice_analysis_interval_seconds: float = 5.0,
-        audio_interval_seconds: float = 4.0,
+        text_interval_seconds: float = 2.1,
+        voice_analysis_interval_seconds: float = 2.1,
+        audio_interval_seconds: float = 3.1,
         local_speech_transcriber: Optional[object] = None,
     ) -> None:
         if not api_key:
@@ -263,17 +263,20 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._text_rate_lock = asyncio.Lock()
+        self._voice_text_rate_lock = asyncio.Lock()
         self._audio_rate_lock = asyncio.Lock()
         self._text_interval_seconds = max(0.0, text_interval_seconds)
         self._voice_analysis_interval_seconds = max(
-            self._text_interval_seconds, voice_analysis_interval_seconds
+            0.0, voice_analysis_interval_seconds
         )
         self._audio_interval_seconds = max(0.0, audio_interval_seconds)
         self._next_text_request_at = 0.0
         self._next_voice_analysis_at = 0.0
         self._next_audio_request_at = 0.0
         self._text_cooldown_until = 0.0
+        self._voice_text_cooldown_until = 0.0
         self._primary_text_cooldown_until = 0.0
+        self._primary_voice_text_cooldown_until = 0.0
         self._audio_cooldown_until = 0.0
         self._local_speech_transcriber = local_speech_transcriber
         self._session: Optional[aiohttp.ClientSession] = None
@@ -333,12 +336,6 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
         local_result = self._local_engine.analyze(text)
         if local_result.detected:
             return local_result
-        if (
-            request_source != "voice"
-            and not reply_context
-            and not self._local_engine.has_moderation_signal(text)
-        ):
-            return local_result
         if not await self._reserve_moderation_slot(request_source):
             self._text_fallbacks += 1
             self._quota_skipped_text_requests += 1
@@ -352,14 +349,21 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
             )
             remote_result = self._result_from_payload(payload)
             self._successful_text_requests += 1
-            self._last_text_success_at = time.monotonic()
+            if request_source != "voice":
+                self._last_text_success_at = time.monotonic()
             return _merge_results(remote_result, local_result)
         except Exception as exc:
-            self._record_failure(exc, request_type="text")
+            self._record_failure(
+                exc,
+                request_type=("voice_text" if request_source == "voice" else "text"),
+            )
             self._text_fallbacks += 1
             LOGGER.warning(
-                "External text moderation failed; local fallback used (error=%s)",
+                "External text moderation failed; local fallback used "
+                "(error=%s, status=%s, source=%s)",
                 type(exc).__name__,
+                getattr(exc, "status", None),
+                request_source,
             )
             return self._local_engine.analyze_fallback(text)
 
@@ -388,8 +392,10 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
         except Exception as exc:
             self._record_failure(exc, request_type="audio")
             LOGGER.warning(
-                "External speech recognition failed; audio chunk discarded (error=%s)",
+                "External speech recognition failed; audio chunk discarded "
+                "(error=%s, status=%s)",
                 type(exc).__name__,
+                getattr(exc, "status", None),
             )
             transcript = await self._local_transcribe(wav_audio)
             return await self._verify_voice_candidate(
@@ -441,12 +447,13 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
         }
         current = asyncio.get_running_loop().time()
         models = [selected_model]
-        if (
-            not is_voice
-            and self._fallback_text_model
-            and self._fallback_text_model != self._text_model
-        ):
-            if current < self._primary_text_cooldown_until:
+        if self._fallback_text_model and self._fallback_text_model != selected_model:
+            primary_cooldown_until = (
+                self._primary_voice_text_cooldown_until
+                if is_voice
+                else self._primary_text_cooldown_until
+            )
+            if current < primary_cooldown_until:
                 models = [self._fallback_text_model]
             else:
                 models.append(self._fallback_text_model)
@@ -464,14 +471,16 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
                 can_fallback = (
                     exc.status == 429
                     and index + 1 < len(models)
-                    and model == self._text_model
+                    and model == selected_model
                 )
                 if not can_fallback:
                     raise
                 self._rate_limit_failures += 1
-                self._primary_text_cooldown_until = current + max(
-                    exc.retry_after_seconds, 60.0
-                )
+                cooldown_until = current + max(exc.retry_after_seconds, 60.0)
+                if is_voice:
+                    self._primary_voice_text_cooldown_until = cooldown_until
+                else:
+                    self._primary_text_cooldown_until = cooldown_until
         if response is None:
             raise RuntimeError("text moderation API returned no response")
         content = response["choices"][0]["message"]["content"]
@@ -634,25 +643,34 @@ For cynicism, require confidence 80 or higher only for clear targeted contempt."
                 self._text_cooldown_until = max(
                     self._text_cooldown_until, cooldown_until
                 )
+            elif request_type == "voice_text":
+                self._voice_text_cooldown_until = max(
+                    self._voice_text_cooldown_until, cooldown_until
+                )
             else:
                 self._audio_cooldown_until = max(
                     self._audio_cooldown_until, cooldown_until
                 )
 
     async def _reserve_moderation_slot(self, request_source: str) -> bool:
-        async with self._text_rate_lock:
+        is_voice = request_source == "voice"
+        lock = self._voice_text_rate_lock if is_voice else self._text_rate_lock
+        async with lock:
             current = asyncio.get_running_loop().time()
-            if current < self._text_cooldown_until:
-                return False
-            if current < self._next_text_request_at:
-                return False
-            if request_source == "voice" and current < self._next_voice_analysis_at:
-                return False
-            self._next_text_request_at = current + self._text_interval_seconds
-            if request_source == "voice":
+            if is_voice:
+                if current < self._voice_text_cooldown_until:
+                    return False
+                if current < self._next_voice_analysis_at:
+                    return False
                 self._next_voice_analysis_at = (
                     current + self._voice_analysis_interval_seconds
                 )
+            else:
+                if current < self._text_cooldown_until:
+                    return False
+                if current < self._next_text_request_at:
+                    return False
+                self._next_text_request_at = current + self._text_interval_seconds
             return True
 
     async def _reserve_audio_slot(self) -> bool:

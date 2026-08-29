@@ -44,8 +44,12 @@ def main() -> int:
                 config.groq_cynicism_confidence_threshold
             ),
             timeout_seconds=config.groq_timeout_seconds,
+            text_interval_seconds=config.groq_text_analysis_interval_seconds,
             voice_analysis_interval_seconds=(
                 config.groq_voice_analysis_interval_seconds
+            ),
+            audio_interval_seconds=(
+                config.groq_audio_transcription_interval_seconds
             ),
             local_speech_transcriber=local_speech,
         )

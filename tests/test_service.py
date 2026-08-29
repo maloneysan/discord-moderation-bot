@@ -164,14 +164,44 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(service._post_chat.await_count, 372)
 
-    async def test_ordinary_message_does_not_spend_remote_quota(self) -> None:
+    async def test_ordinary_message_is_checked_by_remote_ai(self) -> None:
         service = self.make_service()
-        service._post_chat = AsyncMock()
+        service._post_chat = AsyncMock(
+            return_value={
+                "discrimination": {"detected": False, "confidence": 1, "reason": ""},
+                "cynicism": {"detected": False, "confidence": 1, "reason": ""},
+                "sexual_content": {"detected": False, "confidence": 1, "reason": ""},
+                "sensitive_term": {"detected": False, "confidence": 1, "reason": ""},
+                "drug_content": {"detected": False, "confidence": 1, "reason": ""},
+            }
+        )
 
         result = await service.analyze("今日はいい天気ですね")
 
         self.assertFalse(result.detected)
-        service._post_chat.assert_not_awaited()
+        service._post_chat.assert_awaited_once()
+
+    async def test_text_and_voice_use_independent_model_intervals(self) -> None:
+        service = GroqModerationService(
+            "not-a-real-key",
+            ModerationEngine.from_json(RULES_PATH),
+            text_interval_seconds=60,
+            voice_analysis_interval_seconds=60,
+        )
+        service._post_chat = AsyncMock(
+            return_value={
+                "discrimination": {"detected": False, "confidence": 1, "reason": ""},
+                "cynicism": {"detected": False, "confidence": 1, "reason": ""},
+                "sexual_content": {"detected": False, "confidence": 1, "reason": ""},
+                "sensitive_term": {"detected": False, "confidence": 1, "reason": ""},
+                "drug_content": {"detected": False, "confidence": 1, "reason": ""},
+            }
+        )
+
+        await service.analyze("通常のVC文字起こし", request_source="voice")
+        await service.analyze("通常のテキスト投稿")
+
+        self.assertEqual(service._post_chat.await_count, 2)
 
     async def test_primary_429_uses_secondary_text_model(self) -> None:
         service = self.make_service()
@@ -251,6 +281,40 @@ class GroqModerationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["model"], "openai/gpt-oss-safeguard-20b")
         self.assertEqual(
             body["messages"][0]["content"], service._VOICE_SYSTEM_PROMPT
+        )
+
+    async def test_voice_429_uses_secondary_text_model(self) -> None:
+        service = self.make_service()
+        category_payload = {
+            "discrimination": {"detected": True, "confidence": 90, "reason": "排除です。"},
+            "cynicism": {"detected": False, "confidence": 1, "reason": ""},
+            "sexual_content": {"detected": False, "confidence": 1, "reason": ""},
+            "sensitive_term": {"detected": False, "confidence": 1, "reason": ""},
+            "drug_content": {"detected": False, "confidence": 1, "reason": ""},
+        }
+        service._request_json = AsyncMock(
+            side_effect=[
+                _RetryableApiError("rpm", status=429, retry_after_seconds=30),
+                {
+                    "choices": [
+                        {"message": {"content": json.dumps(category_payload)}}
+                    ]
+                },
+            ]
+        )
+
+        payload = await service._post_chat(
+            "音声文字起こし", None, (), request_source="voice"
+        )
+
+        self.assertEqual(payload, category_payload)
+        calls = service._request_json.await_args_list
+        self.assertEqual(
+            calls[0].kwargs["json_body"]["model"],
+            "openai/gpt-oss-safeguard-20b",
+        )
+        self.assertEqual(
+            calls[1].kwargs["json_body"]["model"], "openai/gpt-oss-20b"
         )
 
     async def test_audio_api_failure_uses_local_speech_fallback(self) -> None:
