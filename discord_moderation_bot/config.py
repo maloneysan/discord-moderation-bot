@@ -27,18 +27,18 @@ class BotConfig:
     groq_text_model: str = "openai/gpt-oss-120b"
     groq_fallback_text_model: str = "openai/gpt-oss-20b"
     groq_voice_text_model: str = "openai/gpt-oss-safeguard-20b"
-    groq_speech_model: str = "whisper-large-v3"
-    groq_confidence_threshold: int = 50
-    groq_cynicism_confidence_threshold: int = 80
+    groq_speech_model: str = "whisper-large-v3-turbo"
+    groq_fallback_speech_model: str = "whisper-large-v3"
+    groq_confidence_threshold: int = 25
     groq_timeout_seconds: float = 20.0
-    groq_text_analysis_interval_seconds: float = 2.1
-    groq_voice_analysis_interval_seconds: float = 2.1
-    groq_audio_transcription_interval_seconds: float = 3.1
+    groq_text_interval_seconds: float = 10.0
+    groq_voice_interval_seconds: float = 10.0
+    groq_audio_interval_seconds: float = 6.0
     voice_chunk_seconds: int = 10
     context_message_count: int = 3
     context_ttl_seconds: int = 180
-    voice_min_rms: int = 80
-    voice_min_utterance_ms: int = 180
+    voice_min_rms: int = 25
+    voice_min_utterance_ms: int = 100
     runtime_state_path: Optional[Path] = None
 
     @classmethod
@@ -107,35 +107,35 @@ class BotConfig:
             or "openai/gpt-oss-safeguard-20b"
         )
         groq_speech_model = (
-            values.get("GROQ_SPEECH_MODEL", "whisper-large-v3").strip()
+            values.get("GROQ_SPEECH_MODEL", "whisper-large-v3-turbo").strip()
+            or "whisper-large-v3-turbo"
+        )
+        groq_fallback_speech_model = (
+            values.get(
+                "GROQ_FALLBACK_SPEECH_MODEL", "whisper-large-v3"
+            ).strip()
             or "whisper-large-v3"
         )
         groq_confidence_threshold = _parse_bounded_int(
-            values.get("GROQ_CONFIDENCE_THRESHOLD", "50"),
+            values.get("GROQ_CONFIDENCE_THRESHOLD", "25"),
             "GROQ_CONFIDENCE_THRESHOLD",
-            0,
-            100,
-        )
-        groq_cynicism_confidence_threshold = _parse_bounded_int(
-            values.get("GROQ_CYNICISM_CONFIDENCE_THRESHOLD", "80"),
-            "GROQ_CYNICISM_CONFIDENCE_THRESHOLD",
             0,
             100,
         )
         groq_timeout_seconds = _parse_positive_float(
             values.get("GROQ_TIMEOUT_SECONDS", "20"), "GROQ_TIMEOUT_SECONDS"
         )
-        groq_text_analysis_interval_seconds = _parse_positive_float(
-            values.get("GROQ_TEXT_ANALYSIS_INTERVAL_SECONDS", "2.1"),
-            "GROQ_TEXT_ANALYSIS_INTERVAL_SECONDS",
+        groq_text_interval_seconds = _parse_positive_float(
+            values.get("GROQ_TEXT_INTERVAL_SECONDS", "10"),
+            "GROQ_TEXT_INTERVAL_SECONDS",
         )
-        groq_voice_analysis_interval_seconds = _parse_positive_float(
-            values.get("GROQ_VOICE_ANALYSIS_INTERVAL_SECONDS", "2.1"),
-            "GROQ_VOICE_ANALYSIS_INTERVAL_SECONDS",
+        groq_voice_interval_seconds = _parse_positive_float(
+            values.get("GROQ_VOICE_INTERVAL_SECONDS", "10"),
+            "GROQ_VOICE_INTERVAL_SECONDS",
         )
-        groq_audio_transcription_interval_seconds = _parse_positive_float(
-            values.get("GROQ_AUDIO_TRANSCRIPTION_INTERVAL_SECONDS", "3.1"),
-            "GROQ_AUDIO_TRANSCRIPTION_INTERVAL_SECONDS",
+        groq_audio_interval_seconds = _parse_positive_float(
+            values.get("GROQ_AUDIO_INTERVAL_SECONDS", "6"),
+            "GROQ_AUDIO_INTERVAL_SECONDS",
         )
         voice_chunk_seconds = _parse_bounded_int(
             values.get("VOICE_CHUNK_SECONDS", "10"),
@@ -156,13 +156,13 @@ class BotConfig:
             600,
         )
         voice_min_rms = _parse_bounded_int(
-            values.get("VOICE_MIN_RMS", "80"),
+            values.get("VOICE_MIN_RMS", "25"),
             "VOICE_MIN_RMS",
             0,
             5000,
         )
         voice_min_utterance_ms = _parse_bounded_int(
-            values.get("VOICE_MIN_UTTERANCE_MS", "180"),
+            values.get("VOICE_MIN_UTTERANCE_MS", "100"),
             "VOICE_MIN_UTTERANCE_MS",
             100,
             2000,
@@ -200,18 +200,12 @@ class BotConfig:
             groq_fallback_text_model=groq_fallback_text_model,
             groq_voice_text_model=groq_voice_text_model,
             groq_speech_model=groq_speech_model,
+            groq_fallback_speech_model=groq_fallback_speech_model,
             groq_confidence_threshold=groq_confidence_threshold,
-            groq_cynicism_confidence_threshold=groq_cynicism_confidence_threshold,
             groq_timeout_seconds=groq_timeout_seconds,
-            groq_text_analysis_interval_seconds=(
-                groq_text_analysis_interval_seconds
-            ),
-            groq_voice_analysis_interval_seconds=(
-                groq_voice_analysis_interval_seconds
-            ),
-            groq_audio_transcription_interval_seconds=(
-                groq_audio_transcription_interval_seconds
-            ),
+            groq_text_interval_seconds=groq_text_interval_seconds,
+            groq_voice_interval_seconds=groq_voice_interval_seconds,
+            groq_audio_interval_seconds=groq_audio_interval_seconds,
             voice_chunk_seconds=voice_chunk_seconds,
             context_message_count=context_message_count,
             context_ttl_seconds=context_ttl_seconds,

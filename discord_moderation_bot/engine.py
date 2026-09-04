@@ -15,7 +15,7 @@ _CONTROL_CHARACTERS = re.compile(
 )
 _VARIATION_SELECTORS = re.compile("[\ufe00-\ufe0f\U000e0100-\U000e01ef]")
 _WHITESPACE = re.compile(r"\s+")
-_OBFUSCATION_SEPARATORS = re.compile(r"[._･・·•]+")
+_OBFUSCATION_SEPARATORS = re.compile(r"[._･・·•/／|｜*＊\-]+")
 
 
 _LOCAL_REASONS = {
@@ -27,38 +27,6 @@ _LOCAL_REASONS = {
     "sensitive_term": "サーバーで指定された要注意語への言及です。",
     "drug_content": "違法薬物や薬物乱用に関連する内容です。",
 }
-
-_LOCAL_RULE_REASONS = {
-    "discrimination.explicit_slur": "属性や障害などを蔑称で呼び、相手の尊厳を傷つけています。",
-    "discrimination.exclusion_or_inferiority": "属性や立場を理由に、能力を低く扱ったり排除を求めています。",
-    "discrimination.harmful_stereotype": "集団全体を否定的な固定観念で決めつけています。",
-    "discrimination.dehumanization": "人を害虫や汚物などに例え、人間としての尊厳を否定しています。",
-    "discrimination.rights_denial": "属性や立場を理由に、権利や参加機会を奪うことを求めています。",
-    "discrimination.gender_role_denial": "性別役割を押し付け、相手の能力や行動を否定しています。",
-    "discrimination.ableist_denial": "障害や疾病を甘え・怠けと決めつけ、本人の困難を否定しています。",
-    "discrimination.identity_pathologizing": "性自認や性的指向を病気・異常として扱っています。",
-    "discrimination.protected_periphrasis": "出身・宗教・障害などで示した集団を、不利に扱う文脈です。",
-    "discrimination.hostile_treatment": "属性や出身を理由に、同等に扱わない・遠ざける内容です。",
-    "discrimination.broad_stereotype": "属性集団を否定的な特徴で一括りにしています。",
-    "cynicism.gendered_mockery": "性別規範を使って、相手を弱い・情けないと辱めています。",
-    "cynicism.ridicule": "相手の能力や言動を低く扱い、笑いものにしています。",
-    "cynicism.implicit_target": "相手の理解力や反応を見下し、恥をかかせる言い方です。",
-    "cynicism.mocking_reaction": "相手の言動に対する嫌悪や嘲笑を、誇張した反応で示しています。",
-    "cynicism.patronizing": "相手を子ども扱いするような褒め方で見下しています。",
-    "cynicism.dismissive": "相手の意見や努力を取り合わず、突き放しています。",
-    "cynicism.direct_targeted_insult": "特定の相手へ能力や人格を直接侮辱しています。",
-    "cynicism.failure_mockery": "失敗や不得意を笑いものにして見下しています。",
-    "cynicism.offline_contempt_cue": "相手を価値のないものとして突き放しています。",
-}
-
-_COMMUNITY_CYNICISM_RULES = frozenset(
-    {
-        "cynicism.uo_reaction",
-        "cynicism.dowa_reaction",
-        "cynicism.meu_ending",
-        "cynicism.kuiya_reaction",
-    }
-)
 
 
 class RuleConfigurationError(ValueError):
@@ -91,19 +59,13 @@ class ModerationEngine:
     def __init__(
         self,
         threshold: int,
-        fallback_threshold: int,
         categories: Mapping[str, str],
         rules: Sequence[_CompiledRule],
         exceptions: Sequence[Pattern[str]],
     ) -> None:
         if threshold <= 0:
             raise RuleConfigurationError("threshold must be a positive integer")
-        if fallback_threshold <= 0 or fallback_threshold > threshold:
-            raise RuleConfigurationError(
-                "fallback_threshold must be positive and no greater than threshold"
-            )
         self._threshold = threshold
-        self._fallback_threshold = fallback_threshold
         self._categories = dict(categories)
         self._rules = tuple(rules)
         self._exceptions = tuple(exceptions)
@@ -122,11 +84,6 @@ class ModerationEngine:
         threshold = payload.get("threshold")
         if not isinstance(threshold, int) or isinstance(threshold, bool):
             raise RuleConfigurationError("threshold must be an integer")
-        fallback_threshold = payload.get("fallback_threshold", threshold)
-        if not isinstance(fallback_threshold, int) or isinstance(
-            fallback_threshold, bool
-        ):
-            raise RuleConfigurationError("fallback_threshold must be an integer")
 
         raw_categories = payload.get("categories")
         if not isinstance(raw_categories, dict) or not raw_categories:
@@ -143,7 +100,7 @@ class ModerationEngine:
 
         exceptions = cls._compile_exceptions(payload.get("exceptions", []))
         rules = cls._compile_rules(payload.get("rules"), categories)
-        return cls(threshold, fallback_threshold, categories, rules, exceptions)
+        return cls(threshold, categories, rules, exceptions)
 
     @staticmethod
     def _compile_exceptions(raw_exceptions: object) -> List[Pattern[str]]:
@@ -199,15 +156,6 @@ class ModerationEngine:
         return compiled
 
     def analyze(self, text: str) -> DetectionResult:
-        return self._analyze_at_threshold(text, self._threshold)
-
-    def analyze_fallback(self, text: str) -> DetectionResult:
-        """Use the conservative offline threshold when external AI is unavailable."""
-        return self._analyze_at_threshold(text, self._fallback_threshold)
-
-    def _analyze_at_threshold(
-        self, text: str, threshold: int
-    ) -> DetectionResult:
         normalized = normalize_text(text)
         if not normalized:
             return DetectionResult.empty()
@@ -216,37 +164,6 @@ class ModerationEngine:
         if self._matches_any(self._exceptions, candidates):
             return DetectionResult.empty()
 
-        scores, matched_ids = self._score_candidates(candidates)
-        detections: List[CategoryDetection] = []
-        for category, label in self._categories.items():
-            score = min(scores[category], 100)
-            if score >= threshold:
-                detections.append(
-                    CategoryDetection(
-                        category=category,
-                        label=label,
-                        score=score,
-                        rule_ids=tuple(matched_ids[category]),
-                        reason=_local_reason(category, matched_ids[category]),
-                    )
-                )
-
-        return DetectionResult(detected=bool(detections), detections=tuple(detections))
-
-    def has_moderation_signal(self, text: str) -> bool:
-        """Return whether a partial local rule warrants expensive AI review."""
-        normalized = normalize_text(text)
-        if not normalized:
-            return False
-        candidates = self._candidate_forms(normalized)
-        if self._matches_any(self._exceptions, candidates):
-            return False
-        _, matched_ids = self._score_candidates(candidates)
-        return any(matched_ids.values())
-
-    def _score_candidates(
-        self, candidates: Sequence[str]
-    ) -> Tuple[Dict[str, int], Dict[str, List[str]]]:
         scores = {category: 0 for category in self._categories}
         matched_ids: Dict[str, List[str]] = {category: [] for category in self._categories}
 
@@ -255,7 +172,21 @@ class ModerationEngine:
                 scores[rule.category] += rule.score
                 matched_ids[rule.category].append(rule.rule_id)
 
-        return scores, matched_ids
+        detections: List[CategoryDetection] = []
+        for category, label in self._categories.items():
+            score = min(scores[category], 100)
+            if score >= self._threshold:
+                detections.append(
+                    CategoryDetection(
+                        category=category,
+                        label=label,
+                        score=score,
+                        rule_ids=tuple(matched_ids[category]),
+                        reason=_LOCAL_REASONS[category],
+                    )
+                )
+
+        return DetectionResult(detected=bool(detections), detections=tuple(detections))
 
     @staticmethod
     def _candidate_forms(normalized: str) -> Tuple[str, ...]:
@@ -266,13 +197,3 @@ class ModerationEngine:
     @staticmethod
     def _matches_any(patterns: Iterable[Pattern[str]], candidates: Sequence[str]) -> bool:
         return any(pattern.search(candidate) for pattern in patterns for candidate in candidates)
-
-
-def _local_reason(category: str, rule_ids: Sequence[str]) -> str:
-    for rule_id in rule_ids:
-        detailed = _LOCAL_RULE_REASONS.get(rule_id)
-        if detailed:
-            return detailed
-    if category == "cynicism" and _COMMUNITY_CYNICISM_RULES.intersection(rule_ids):
-        return "サーバーで冷笑として指定された反応・語尾が含まれています。"
-    return _LOCAL_REASONS[category]

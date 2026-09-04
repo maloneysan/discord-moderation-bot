@@ -41,15 +41,9 @@ class BotConfigTests(unittest.TestCase):
         self.assertEqual(config.monitored_channel_ids, frozenset())
         self.assertIsNone(config.alert_channel_for(100))
         self.assertEqual(config.voice_channel_ids, {})
-        self.assertEqual(config.voice_min_rms, 80)
-        self.assertEqual(config.voice_min_utterance_ms, 180)
-        self.assertEqual(config.groq_cynicism_confidence_threshold, 80)
-        self.assertEqual(
-            config.groq_voice_text_model, "openai/gpt-oss-safeguard-20b"
-        )
-        self.assertEqual(config.groq_text_analysis_interval_seconds, 2.1)
-        self.assertEqual(config.groq_voice_analysis_interval_seconds, 2.1)
-        self.assertEqual(config.groq_audio_transcription_interval_seconds, 3.1)
+        self.assertEqual(config.groq_confidence_threshold, 25)
+        self.assertEqual(config.voice_min_rms, 25)
+        self.assertEqual(config.voice_min_utterance_ms, 100)
 
     def test_voice_configuration_is_parsed(self) -> None:
         config = BotConfig.from_env(
@@ -69,7 +63,16 @@ class BotConfigTests(unittest.TestCase):
         self.assertEqual(config.voice_alert_channel_for(100), 300)
         self.assertEqual(config.voice_alert_channel_for(101), 301)
         self.assertEqual(config.moderation_backend, "groq")
-        self.assertEqual(config.groq_speech_model, "whisper-large-v3")
+        self.assertEqual(config.groq_speech_model, "whisper-large-v3-turbo")
+        self.assertEqual(
+            config.groq_fallback_speech_model, "whisper-large-v3"
+        )
+        self.assertEqual(
+            config.groq_voice_text_model, "openai/gpt-oss-safeguard-20b"
+        )
+        self.assertEqual(config.groq_text_interval_seconds, 10.0)
+        self.assertEqual(config.groq_voice_interval_seconds, 10.0)
+        self.assertEqual(config.groq_audio_interval_seconds, 6.0)
 
     def test_all_guilds_and_automatic_voice_need_no_id_mappings(self) -> None:
         config = BotConfig.from_env(
@@ -127,12 +130,12 @@ class BotConfigTests(unittest.TestCase):
                 "GROQ_FALLBACK_TEXT_MODEL": "fallback-text-model",
                 "GROQ_VOICE_TEXT_MODEL": "voice-text-model",
                 "GROQ_SPEECH_MODEL": "speech-model",
+                "GROQ_FALLBACK_SPEECH_MODEL": "fallback-speech-model",
                 "GROQ_CONFIDENCE_THRESHOLD": "42",
-                "GROQ_CYNICISM_CONFIDENCE_THRESHOLD": "81",
                 "GROQ_TIMEOUT_SECONDS": "12.5",
-                "GROQ_TEXT_ANALYSIS_INTERVAL_SECONDS": "2.5",
-                "GROQ_VOICE_ANALYSIS_INTERVAL_SECONDS": "7.5",
-                "GROQ_AUDIO_TRANSCRIPTION_INTERVAL_SECONDS": "3.5",
+                "GROQ_TEXT_INTERVAL_SECONDS": "9",
+                "GROQ_VOICE_INTERVAL_SECONDS": "11",
+                "GROQ_AUDIO_INTERVAL_SECONDS": "7",
                 "VOICE_CHUNK_SECONDS": "15",
                 "CONTEXT_MESSAGE_COUNT": "4",
                 "CONTEXT_TTL_SECONDS": "240",
@@ -144,12 +147,12 @@ class BotConfigTests(unittest.TestCase):
         self.assertEqual(config.groq_fallback_text_model, "fallback-text-model")
         self.assertEqual(config.groq_voice_text_model, "voice-text-model")
         self.assertEqual(config.groq_speech_model, "speech-model")
+        self.assertEqual(config.groq_fallback_speech_model, "fallback-speech-model")
         self.assertEqual(config.groq_confidence_threshold, 42)
-        self.assertEqual(config.groq_cynicism_confidence_threshold, 81)
         self.assertEqual(config.groq_timeout_seconds, 12.5)
-        self.assertEqual(config.groq_text_analysis_interval_seconds, 2.5)
-        self.assertEqual(config.groq_voice_analysis_interval_seconds, 7.5)
-        self.assertEqual(config.groq_audio_transcription_interval_seconds, 3.5)
+        self.assertEqual(config.groq_text_interval_seconds, 9.0)
+        self.assertEqual(config.groq_voice_interval_seconds, 11.0)
+        self.assertEqual(config.groq_audio_interval_seconds, 7.0)
         self.assertEqual(config.voice_chunk_seconds, 15)
         self.assertEqual(config.context_message_count, 4)
         self.assertEqual(config.context_ttl_seconds, 240)

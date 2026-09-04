@@ -85,7 +85,7 @@ class VoiceAlertRegistry:
 
 
 class VoiceTranscriptModerator:
-    """Analyze an ephemeral transcript and emit only content-free labels."""
+    """Analyze an ephemeral transcript and pass it only to the alert sender."""
 
     def __init__(
         self,
@@ -127,8 +127,8 @@ class VoicePcmChunker:
         self,
         chunk_seconds: int = 10,
         *,
-        min_rms: int = 80,
-        min_utterance_ms: int = 180,
+        min_rms: int = 25,
+        min_utterance_ms: int = 100,
     ) -> None:
         if chunk_seconds <= 0:
             raise ValueError("chunk_seconds must be positive")

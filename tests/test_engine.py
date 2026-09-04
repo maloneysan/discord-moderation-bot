@@ -21,10 +21,6 @@ class ModerationEngineTests(unittest.TestCase):
         result = self.engine.analyze(text)
         return {detection.category for detection in result.detections}
 
-    def fallback_categories_for(self, text: str):
-        result = self.engine.analyze_fallback(text)
-        return {detection.category for detection in result.detections}
-
     def test_explicit_slur_is_detected_after_obfuscation(self) -> None:
         result = self.engine.analyze("土\u200b人")
         self.assertTrue(result.detected)
@@ -35,11 +31,7 @@ class ModerationEngineTests(unittest.TestCase):
         self.assertEqual(self.categories_for("外国人は出ていけ"), {"discrimination"})
 
     def test_targeted_ridicule_is_cynicism(self) -> None:
-        result = self.engine.analyze("お前、必死で草")
-        self.assertEqual(
-            {item.category for item in result.detections}, {"cynicism"}
-        )
-        self.assertIn("能力や言動", result.detections[0].reason)
+        self.assertEqual(self.categories_for("お前、必死で草"), {"cynicism"})
 
     def test_implicit_target_ridicule_is_cynicism(self) -> None:
         self.assertEqual(self.categories_for("そんなこともできないの"), {"cynicism"})
@@ -54,28 +46,12 @@ class ModerationEngineTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(self.categories_for(text), {"cynicism"})
         self.assertFalse(self.engine.analyze("うお座の話").detected)
-        self.assertIn(
-            "サーバーで冷笑として指定",
-            self.engine.analyze("うお").detections[0].reason,
-        )
 
     def test_dowa_variants_are_cynicism_but_dwarf_is_not(self) -> None:
         for text in ("どわー", "どわ〜", "ドワーーw"):
             with self.subTest(text=text):
                 self.assertEqual(self.categories_for(text), {"cynicism"})
         self.assertFalse(self.engine.analyze("ドワーフの冒険").detected)
-
-    def test_ambiguous_reactions_without_a_target_are_not_cynicism(self) -> None:
-        for text in (
-            "うわぁ…すごい景色",
-            "きっつ…今日は仕事が多い",
-            "いたた…転んだ",
-            "はいはい、確認します",
-            "知らんけど、たぶん雨",
-            "もういいよ、休もう",
-        ):
-            with self.subTest(text=text):
-                self.assertFalse(self.engine.analyze(text).detected)
 
     def test_gendered_emasculation_is_discrimination(self) -> None:
         for text in (
@@ -146,39 +122,86 @@ class ModerationEngineTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(self.categories_for(text), {"discrimination"})
 
-    def test_local_fallback_covers_periphrastic_discrimination(self) -> None:
-        examples = (
-            "あの国から来た連中を同じ席に座らせる必要はない",
-            "向こうの宗教の人とは関わりたくない",
-            "外国の人はみんなマナーが悪い",
-        )
-        for text in examples:
+    def test_expanded_japanese_and_english_slurs_are_detected(self) -> None:
+        for text in (
+            "ちゃんころ",
+            "毛唐",
+            "知恵遅れ",
+            "nigger",
+            "faggot",
+        ):
             with self.subTest(text=text):
-                self.assertEqual(
-                    self.fallback_categories_for(text), {"discrimination"}
-                )
+                self.assertEqual(self.categories_for(text), {"discrimination"})
 
-    def test_local_fallback_covers_targeted_contempt(self) -> None:
-        examples = (
-            "お前の話はどうでもいい",
-            "あんたは本当にセンスない",
-            "失敗して笑われるとかざまあ",
-        )
-        for text in examples:
+    def test_more_protected_groups_with_hostility_are_detected(self) -> None:
+        for text in (
+            "クルド人は国へ帰れ",
+            "トランスジェンダーを雇うな",
+            "認知症の人は社会のお荷物だ",
+            "母子家庭なんて全員信用できない",
+        ):
             with self.subTest(text=text):
-                self.assertEqual(self.fallback_categories_for(text), {"cynicism"})
+                self.assertEqual(self.categories_for(text), {"discrimination"})
 
-    def test_local_fallback_still_ignores_neutral_or_ambiguous_phrases(self) -> None:
-        examples = (
-            "外国の人向けに同じ席を用意する",
-            "その案は私には向いてない",
-            "失敗から学ぶことが大切です",
-            "どうでもいい雑談をしよう",
-            "草",
-        )
-        for text in examples:
+    def test_more_direct_abuse_and_mockery_are_detected(self) -> None:
+        for text in (
+            "死ね",
+            "黙れ",
+            "帰れ",
+            "ざまあ",
+            "涙拭けよ",
+            "you are useless",
+            "お前は役立たず",
+        ):
             with self.subTest(text=text):
-                self.assertFalse(self.engine.analyze_fallback(text).detected)
+                self.assertEqual(self.categories_for(text), {"cynicism"})
+
+    def test_high_sensitivity_detects_standalone_abuse_and_dehumanization(self) -> None:
+        cases = {
+            "バカ": {"cynicism"},
+            "キモい": {"cynicism"},
+            "害虫": {"discrimination"},
+            "お前w": {"cynicism"},
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(self.categories_for(text), expected)
+
+    def test_high_sensitivity_keeps_basic_neutral_terms_safe(self) -> None:
+        for text in ("草", "女性", "魚料理"):
+            with self.subTest(text=text):
+                self.assertFalse(self.engine.analyze(text).detected)
+
+    def test_more_sexual_and_drug_terms_are_detected(self) -> None:
+        cases = {
+            "中出し": {"sexual_content"},
+            "ポルノ": {"sexual_content"},
+            "porn": {"sexual_content"},
+            "DMT": {"drug_content"},
+            "阿片": {"drug_content"},
+            "葉っぱを吸う": {"drug_content"},
+            "アイスをキメる": {"drug_content"},
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(self.categories_for(text), expected)
+
+    def test_expanded_obfuscation_separators_are_removed(self) -> None:
+        for text in ("ガ/イ/ジ", "死｜ね", "f-a-g-g-o-t"):
+            with self.subTest(text=text):
+                self.assertTrue(self.engine.analyze(text).detected)
+
+    def test_ambiguous_new_terms_need_hostile_context(self) -> None:
+        for text in (
+            "庭の草を刈る",
+            "アイスを食べる",
+            "仕事のスピードを上げる",
+            "母子家庭への支援を増やす",
+            "認知症について学ぶ",
+            "you are helpful",
+        ):
+            with self.subTest(text=text):
+                self.assertFalse(self.engine.analyze(text).detected)
 
     def test_combined_message_returns_both_categories(self) -> None:
         self.assertEqual(
@@ -198,11 +221,6 @@ class ModerationEngineTests(unittest.TestCase):
         ):
             with self.subTest(text=text):
                 self.assertFalse(self.engine.analyze(text).detected)
-
-    def test_partial_attribute_or_mockery_is_an_ai_review_signal(self) -> None:
-        self.assertTrue(self.engine.has_moderation_signal("外国人について話す"))
-        self.assertTrue(self.engine.has_moderation_signal("必死すぎる"))
-        self.assertFalse(self.engine.has_moderation_signal("今日はいい天気です"))
 
     def test_general_joke_is_not_detected(self) -> None:
         self.assertFalse(self.engine.analyze("この猫の動画おもしろくて笑った").detected)

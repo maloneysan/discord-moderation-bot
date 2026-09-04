@@ -39,18 +39,12 @@ def main() -> int:
             fallback_text_model=config.groq_fallback_text_model,
             voice_text_model=config.groq_voice_text_model,
             speech_model=config.groq_speech_model,
+            fallback_speech_model=config.groq_fallback_speech_model,
             confidence_threshold=config.groq_confidence_threshold,
-            cynicism_confidence_threshold=(
-                config.groq_cynicism_confidence_threshold
-            ),
             timeout_seconds=config.groq_timeout_seconds,
-            text_interval_seconds=config.groq_text_analysis_interval_seconds,
-            voice_analysis_interval_seconds=(
-                config.groq_voice_analysis_interval_seconds
-            ),
-            audio_interval_seconds=(
-                config.groq_audio_transcription_interval_seconds
-            ),
+            text_interval_seconds=config.groq_text_interval_seconds,
+            voice_interval_seconds=config.groq_voice_interval_seconds,
+            audio_interval_seconds=config.groq_audio_interval_seconds,
             local_speech_transcriber=local_speech,
         )
     else:

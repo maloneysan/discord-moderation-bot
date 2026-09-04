@@ -145,12 +145,12 @@ class VoicePcmChunkerTests(unittest.TestCase):
         self.assertIsNone(chunker.flush(100, 200))
 
     def test_lower_default_rms_keeps_clear_low_volume_voice(self) -> None:
-        sample = int(100).to_bytes(2, "little", signed=True)
+        sample = int(60).to_bytes(2, "little", signed=True)
         low_volume_voice = sample * 2 * 24_000
         silence_frame = b"\x00\x00" * 2 * 960
 
         permissive = VoicePcmChunker(chunk_seconds=10)
-        strict = VoicePcmChunker(chunk_seconds=10, min_rms=180)
+        strict = VoicePcmChunker(chunk_seconds=10, min_rms=80)
         self.assertEqual(permissive.accept_pcm(100, 200, low_volume_voice), ())
         self.assertEqual(len(permissive.accept_pcm(100, 200, silence_frame)), 1)
         self.assertEqual(strict.accept_pcm(100, 200, low_volume_voice), ())
