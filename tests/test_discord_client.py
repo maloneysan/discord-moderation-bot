@@ -69,7 +69,7 @@ class DiscordClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("発言者：テスト話者", message.reply.await_args.args[0])
         self.assertIn("問題だった点：", message.reply.await_args.args[0])
         self.assertIn("・差別表現：", message.reply.await_args.args[0])
-        self.assertIn("該当発言：", message.reply.await_args.args[0])
+        self.assertIn("該当ワード／発言：", message.reply.await_args.args[0])
         self.assertIn(message.content, message.reply.await_args.args[0])
 
     async def test_processing_alerts_once_then_only_for_new_edit_category(self) -> None:
@@ -195,7 +195,7 @@ class DiscordClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("発言者：VC話者", args[0])
         self.assertIn("問題だった点：", args[0])
         self.assertIn("・差別表現：", args[0])
-        self.assertIn("該当発言：「外国人は出ていけ」", args[0])
+        self.assertIn("認識したワード／発言：「外国人は出ていけ」", args[0])
         self.assertEqual(
             kwargs["allowed_mentions"].to_dict(),
             discord.AllowedMentions.none().to_dict(),

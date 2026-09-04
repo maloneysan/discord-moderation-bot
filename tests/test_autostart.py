@@ -46,14 +46,27 @@ class AutostartConfigurationTests(unittest.TestCase):
         self.assertEqual(values["MODERATION_BACKEND"], "groq")
         self.assertEqual(values["GROQ_TEXT_MODEL"], "openai/gpt-oss-120b")
         self.assertEqual(
-            values["GROQ_FALLBACK_TEXT_MODEL"], "openai/gpt-oss-20b"
+            values["GROQ_VOICE_TEXT_MODEL"], "openai/gpt-oss-safeguard-20b"
         )
-        self.assertEqual(values["GROQ_SPEECH_MODEL"], "whisper-large-v3")
+        self.assertEqual(values["GROQ_SPEECH_MODEL"], "whisper-large-v3-turbo")
+        self.assertEqual(
+            values["GROQ_FALLBACK_SPEECH_MODEL"], "whisper-large-v3"
+        )
+        self.assertEqual(values["GROQ_TEXT_INTERVAL_SECONDS"], "10")
+        self.assertEqual(values["GROQ_VOICE_INTERVAL_SECONDS"], "10")
+        self.assertEqual(values["GROQ_AUDIO_INTERVAL_SECONDS"], "6")
+        self.assertEqual(values["GROQ_CONFIDENCE_THRESHOLD"], "25")
+        self.assertEqual(values["VOICE_MIN_RMS"], "25")
+        self.assertEqual(values["VOICE_MIN_UTTERANCE_MS"], "100")
 
     def test_installer_retries_launch_agent_registration(self) -> None:
         installer = INSTALLER_PATH.read_text(encoding="utf-8")
         self.assertIn("if ! /bin/launchctl bootstrap", installer)
         self.assertIn("/bin/sleep 2", installer)
+
+    def test_installer_copies_optional_local_speech_model(self) -> None:
+        installer = INSTALLER_PATH.read_text(encoding="utf-8")
+        self.assertIn("vosk-model-small-ja-0.22", installer)
 
 
 if __name__ == "__main__":

@@ -91,7 +91,7 @@ class MessagePolicyTests(unittest.TestCase):
             source_excerpt="@everyone 外国人は出ていけ `今すぐ`",
         )
         self.assertNotIn("@", alert)
-        self.assertIn("該当発言：", alert)
+        self.assertIn("該当ワード／発言：", alert)
         self.assertIn("外国人は出ていけ", alert)
         self.assertIn("＠everyone", alert)
         self.assertIn("差別表現・冷笑", alert)
@@ -141,7 +141,7 @@ class MessagePolicyTests(unittest.TestCase):
         self.assertIn("問題だった点：", alert)
         self.assertIn("・差別表現：", alert)
         self.assertNotIn("@", alert)
-        self.assertIn("該当発言：「外国人は出ていけ」", alert)
+        self.assertIn("認識したワード／発言：「外国人は出ていけ」", alert)
 
     def test_source_excerpt_is_single_line_markdown_safe_and_bounded(self) -> None:
         source = "@everyone **侮辱**\n" + "長" * 300
@@ -152,12 +152,50 @@ class MessagePolicyTests(unittest.TestCase):
         )
 
         excerpt_line = next(
-            line for line in alert.splitlines() if line.startswith("該当発言：")
+            line for line in alert.splitlines() if line.startswith("該当ワード／発言：")
         )
         self.assertNotIn("@", excerpt_line)
         self.assertNotIn("*", excerpt_line)
-        self.assertLessEqual(len(excerpt_line), len("該当発言：「」") + 240)
+        self.assertLessEqual(len(excerpt_line), len("該当ワード／発言：「」") + 240)
         self.assertTrue(excerpt_line.endswith("…」"))
+
+    def test_known_rule_explains_specific_problem(self) -> None:
+        alert = build_alert_text(
+            [
+                CategoryDetection(
+                    "cynicism",
+                    "冷笑",
+                    85,
+                    ("cynicism.uo_reaction",),
+                    "一般的な説明",
+                )
+            ],
+            "話者",
+            source_excerpt="うお",
+        )
+
+        self.assertIn("「うお」単体", alert)
+        self.assertIn("相手を茶化す冷笑反応", alert)
+
+    def test_expanded_local_rules_have_specific_explanations(self) -> None:
+        cases = (
+            (
+                "discrimination.gender_or_orientation_slur",
+                "性別・性自認・性的指向",
+            ),
+            ("cynicism.direct_abuse", "直接的な暴言"),
+            ("cynicism.english_targeted_insult", "英語で相手"),
+            ("drug_content.coded_action", "薬物の隠語"),
+        )
+        for rule_id, expected in cases:
+            with self.subTest(rule_id=rule_id):
+                category = rule_id.split(".", 1)[0]
+                alert = build_alert_text(
+                    [CategoryDetection(category, "分類", 90, (rule_id,), "一般説明")],
+                    "話者",
+                    source_excerpt="テスト表現",
+                )
+                self.assertIn(expected, alert)
 
 
 if __name__ == "__main__":
